@@ -84,6 +84,24 @@ if __name__ == "__main__":
     # )
     # print("Model Loaded")
 
+    flag = input("Have you downloaded the pre-trained models in the dedicated repo? answer: Y/N")
+
+    if flag=='Y' or flag=='y':
+        mesh_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+            "models",
+            device=DEVICE
+        )
+
+        paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
+            "models",
+            subfolder="hunyuan3d-paint-v2-0-turbo",
+        )
+    elif flag=='N' or flag=='n':
+        mesh_pipeline = None
+        paint_pipeline = None
+    else:
+        print("Please use: Y for yes and N for no")
+
     # --- Load Generation Pipeline in processes ---
     mesh_pipeline = None
     paint_pipeline = None
