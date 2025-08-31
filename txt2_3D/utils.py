@@ -6,7 +6,7 @@ import cv2
 import torch
 from PIL import Image
 from torchvision import transforms
-# from fathomnet.api import images
+from fathomnet.api import images
 import gc
 import time
 import torch
@@ -140,7 +140,7 @@ def clean_memory():
         torch.cuda.ipc_collect()
 
 # ------------------ MESH GENERATION ------------------
-def generate_mesh(image, save_path, mesh_pipeline = None):
+def generate_mesh(image, save_path, mesh_pipeline = None, runtime):
     """Runs mesh generation pipeline in a separate process"""
     if mesh_pipeline is None:
         mesh_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
@@ -148,7 +148,7 @@ def generate_mesh(image, save_path, mesh_pipeline = None):
             subfolder='hunyuan3d-dit-v2-0',
             use_safetensors=False,
             variant='fp16',
-            runtime=True,
+            runtime=runtime,
         )
     mesh_pipeline.enable_model_cpu_offload(device="cuda")
 

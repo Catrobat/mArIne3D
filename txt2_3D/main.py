@@ -16,10 +16,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(PROJECT_ROOT)
 
 # --- Local imports (relative to project root) ---
-from Image_generator import mymodel
+from txt2_3D.Image_generator import mymodel
 from fathomnet.api import images
-from utils import get_best_crop_image
-from GenAI_image_generator import text_to_image
+from txt2_3D.utils import get_best_crop_image, generate_mesh, clean_memory
+from txt2_3D.GenAI_image_generator import text_to_image
 from hy3dgen.texgen import Hunyuan3DPaintPipeline
 from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
 from hy3dgen.rembg import BackgroundRemover
@@ -32,34 +32,6 @@ if rasterizer_libs:
     sys.path.append(os.path.dirname(rasterizer_libs[0]))
 
 
-def clean_memory():
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        print("GPU memory cleared.")
-    else:
-        print("No GPU available.")
-
-
-def generate_mesh(image, save_path, mesh_pipeline):
-        """Runs mesh generation pipeline in a separate process"""
-        if mesh_pipeline is None:
-            mesh_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                'tencent/Hunyuan3D-2',
-                subfolder='hunyuan3d-dit-v2-0',
-                use_safetensors=False,
-                variant='fp16',
-                runtime=True,
-            )
-        mesh_pipeline.enable_model_cpu_offload(device="cuda")
-        print("Mesh model loaded successfully")
-
-        mesh = mesh_pipeline(image=image)[0]
-        mesh.export(save_path)
-        clean_memory()
-        return save_path
-
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
     clean_memory()
@@ -68,25 +40,11 @@ if __name__ == "__main__":
     DEVICE_2 = torch.device("cuda:1" if torch.cuda.device_count() > 1 else ("cuda:0" if torch.cuda.is_available() else "cpu"))
 
     # --- Load Generation Pipeline ---
-    # TEMP loading at runtime
-    # mesh_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-    #     'tencent/Hunyuan3D-2',
-    #     subfolder='hunyuan3d-dit-v2-0',
-    #     variant='fp16',
-    #     device = DEVICE_2,
-    #     runtime=True
-    # )
-
-    # paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
-    #     'tencent/Hunyuan3D-2',
-    #     subfolder='hunyuan3d-paint-v2-0-turbo',
-    #     runtime=True
-    # )
-    # print("Model Loaded")
-
     flag = input("Have you downloaded the pre-trained models in the dedicated repo? answer: Y/N")
 
     if flag=='Y' or flag=='y':
+        local = True
+        runtime = False
         mesh_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             "models",
             device=DEVICE
@@ -97,18 +55,16 @@ if __name__ == "__main__":
             subfolder="hunyuan3d-paint-v2-0-turbo",
         )
     elif flag=='N' or flag=='n':
+        local = False
+        runtime = True
         mesh_pipeline = None
         paint_pipeline = None
     else:
         print("Please use: Y for yes and N for no")
-
-    # --- Load Generation Pipeline in processes ---
-    mesh_pipeline = None
-    paint_pipeline = None
+        assert 0
 
     # ------------------ IMAGE SOURCE CHOICE ------------------
-    # choice = input("Choose image source - [1] FathomNet fetch  [2] GenAI generation: ").strip()
-    choice = "1" # TEMP_choice for testing purpose
+    choice = input("Choose image source - [1] FathomNet fetch  [2] GenAI generation: ").strip()
 
     if choice == "2":
         # --- GenAI IMAGE GENERATION ---
@@ -130,7 +86,8 @@ if __name__ == "__main__":
         best_image = text_to_image(
             prompt=positive_prompt,
             output_path=output_file,
-            negative_prompt=negative_prompt
+            negative_prompt=negative_prompt,
+            local = local
         )
         best_image = Image.open(output_file)  # reload to continue pipeline
 
@@ -182,7 +139,7 @@ if __name__ == "__main__":
 
     # Mesh Gneration
     raw_mesh_path = os.path.join(output_dir, f"img_mesh_{concept}.glb")
-    mesh_proc = mp.Process(target=generate_mesh, args=(image, raw_mesh_path, mesh_pipeline))
+    mesh_proc = mp.Process(target=generate_mesh, args=(image, raw_mesh_path, mesh_pipeline, runtime))
     mesh_proc.start()
     mesh_proc.join()
     img_mesh = trimesh.load(raw_mesh_path)
@@ -223,7 +180,7 @@ if __name__ == "__main__":
         paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
             'tencent/Hunyuan3D-2',
             subfolder='hunyuan3d-paint-v2-0-turbo',
-            runtime=True
+            runtime=runtime
         )
         paint_pipeline.enable_model_cpu_offload(device="cuda")
         print("Paint model loaded successfully")

@@ -24,6 +24,7 @@ DEVICE = torch.device(
 flag = input("Have you downloaded the pre-trained models in the dedicated repo? answer: Y/N")
 
 if flag=='Y' or flag=='y':
+    local = True
     MESH_PIPELINE = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
         "models",
         device=DEVICE
@@ -34,6 +35,7 @@ if flag=='Y' or flag=='y':
         subfolder="hunyuan3d-paint-v2-0-turbo",
     )
 elif flag=='N' or flag=='n':
+    local = False
     MESH_PIPELINE = None
     PAINT_PIPELINE = None
 else:
@@ -65,7 +67,8 @@ def generate():
             method=method,
             output_dir=OUTPUT_DIR,
             mesh_pipeline=MESH_PIPELINE,
-            paint_pipeline=PAINT_PIPELINE
+            paint_pipeline=PAINT_PIPELINE,
+            local = local,
         )
 
         # Always overwrite -> mesh.glb, painted.glb
