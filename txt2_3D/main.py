@@ -111,9 +111,8 @@ if __name__ == "__main__":
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
 
-        # user_input = input("Enter concept name (default: Grimpoteuthis): ").strip() # TEMP comment for kaggle run
-        # concept = user_input if user_input else "Grimpoteuthis"
-        concept = "Grimpoteuthis"
+        user_input = input("Enter concept name (default: Grimpoteuthis): ").strip() # TEMP comment for kaggle run
+        concept = user_input if user_input else "Grimpoteuthis"
         best_image = get_best_crop_image(concept, model, sr_transform, device)
         del model  # free memory
         # if best_image:

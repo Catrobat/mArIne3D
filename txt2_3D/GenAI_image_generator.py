@@ -29,7 +29,7 @@ def load_pipeline(model_path = "stabilityai/stable-diffusion-3.5-large-turbo" , 
 
     t5_path = "diffusers/t5-nf4"
 
-    if local = True:
+    if local == True:
         model_path="models/stable-diffusion-3.5-large-turbo"
         t5_path = "models/t5-nf4"
 
@@ -61,7 +61,7 @@ def load_pipeline(model_path = "stabilityai/stable-diffusion-3.5-large-turbo" , 
 # ------------------ TEXT TO IMAGE FUNCTION ------------------
 def text_to_image(prompt, output_path="generated.png", 
                   negative_prompt=None, steps=28, guidance=7.0,
-                  model_path="models/stable-diffusion-3.5-large-turbo", local=True):
+                  model_path = "stabilityai/stable-diffusion-3.5-large-turbo" , local=False):
     """
     Generate a 2D image from text prompt using Stable Diffusion 3.5 (local model).
     """
