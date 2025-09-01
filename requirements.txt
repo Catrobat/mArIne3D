@@ -1,0 +1,36 @@
+# System dependencies (install via OS package manager)
+ninja
+pybind11
+
+# Core packages
+diffusers
+peft==0.15.0
+bitsandbytes
+fathomnet
+open3d
+transformers
+accelerate
+torch
+torchvision
+numpy
+einops
+opencv-python
+tqdm
+omegaconf
+
+# Mesh Processing
+trimesh
+pymeshlab
+pygltflib
+xatlas
+
+# Training
+scikit-learn
+scikit-image
+
+# Demo / Web
+gradio
+fastapi
+uvicorn
+rembg
+onnxruntime
