@@ -114,8 +114,8 @@ mArIne3D/
 #### Install Python Packages
 
 ```bash
-git clone https://github.com/Dhruvanshu-Joshi/Marine_Biology_GenAI.git
-cd Marine_Biology_GenAI
+git clone https://github.com/Catrobat/mArIne3D.git
+cd mArIne3D
 pip install -r requirements.txt
 ```
 ---
