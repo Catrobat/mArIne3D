@@ -4,7 +4,7 @@ pybind11
 
 # Core packages
 diffusers
-peft==0.15.0
+peft>=0.17.0
 bitsandbytes
 fathomnet
 open3d
