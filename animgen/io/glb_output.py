@@ -477,7 +477,9 @@ def export_glb(
     output_path: str | Path,
     armature: Optional[Armature] = None,
     skin_weights: Optional[dict[str, np.ndarray]] = None,
-    animation: Optional[Union[AnimationClip, Animation, dict[float, Any]]] = None,
+    animation: Optional[
+        Union[list[AnimationClip], AnimationClip, Animation, dict[float, Any]]
+    ] = None,
 ) -> Path:
     """
     Exports a 3D mesh, optional armature hierarchy with skinning, and optional

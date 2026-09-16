@@ -135,7 +135,6 @@ class BaseModelClass:
     def export(
         self,
         output_path: str | Path,
-        animation: Optional[Any] = None,
     ) -> Path:
         """
         Exports the model's mesh, armature, and optional animation to a GLB file.
@@ -148,5 +147,5 @@ class BaseModelClass:
             output_path=output_path,
             armature=self.armature,
             skin_weights=self.skin_weights,
-            animation=animation,
+            animation=self.animator.clips if self.animator is not None else None,
         )

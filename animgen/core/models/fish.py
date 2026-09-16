@@ -791,8 +791,8 @@ class FishModels(Pipeline):
         Performs Bishop-frame lateral straightening along the axis orthogonal to the tail:
         - If tail is vertical (Fish/Sharks): Straightens lateral Z curvature while leaving
           the natural vertical Y tail profile and X longitudinal length completely intact.
-        - If tail is horizontal (Dolphins/Whales): Straightens dorsoventral Y curvature while
-          leaving the horizontal Z tail fluke and X longitudinal length intact.
+        - If tail is horizontal (Dolphins/Whales): Preserves the natural mesh geometry without
+          Y-axis deformation and constructs a direct straight-line spine from snout to caudal peduncle.
 
         Parameters
         ----------
@@ -802,7 +802,7 @@ class FishModels(Pipeline):
         Returns
         -------
         trimesh.Trimesh
-            The laterally straightened canonical mesh.
+            The canonicalized mesh.
         """
         mesh = self.model.mesh
 
@@ -907,7 +907,32 @@ class FishModels(Pipeline):
         # Build Catmull-Rom Spline strictly covering the body
         self.spline = Spline(pts_t, alpha=0.5, phantom_num_points=1)
 
-        # Apply Bishop-Frame Lateral Straightening along orthogonal axis
+        # Determine caudal peduncle and snout points
+        tail_faces = segments.get("tail", [])
+        if tail_faces:
+            t_verts = mesh.vertices[np.unique(mesh.faces[tail_faces])]
+            tail_mid_y = float(0.5 * (t_verts[:, 1].min() + t_verts[:, 1].max()))
+            tail_mid_z = float(0.5 * (t_verts[:, 2].min() + t_verts[:, 2].max()))
+            x_tail_start = float(tail_verts[:, 0].min())
+        else:
+            tail_mid_y = float(spine_pts[-1, 1])
+            tail_mid_z = float(spine_pts[-1, 2])
+            x_tail_start = float(spine_pts[-1, 0])
+
+        snout_pt = np.array(spine_pts[0], dtype=np.float32)
+        peduncle_pt = np.array([x_tail_start, tail_mid_y, tail_mid_z], dtype=np.float32)
+
+        if straighten_axis == "y":
+            # For horizontal tail / cetaceans (Dolphins/Whales):
+            # Skip lateral Bishop mesh deformation to preserve natural dorsoventral shape.
+            # Construct a direct straight line spine connecting snout to caudal peduncle.
+            straight_mesh = mesh.copy()
+            target_spine = np.linspace(snout_pt, peduncle_pt, 100)
+            self.source_spine = target_spine.copy()
+            self.target_spine = target_spine
+            return straight_mesh
+
+        # Apply Bishop-Frame Lateral Straightening along orthogonal axis (Fish/Sharks along Z)
         if self.straighten_mesh:
             straight_mesh = straighten_lateral(
                 mesh,
@@ -926,15 +951,11 @@ class FishModels(Pipeline):
             if straighten_axis == "z":
                 # Flatten Z to centerline
                 target_spine[:, 2] = float(np.mean(target_spine[:, 2]))
-            elif straighten_axis == "y":
-                # Flatten Y to centerline
-                target_spine[:, 1] = float(np.mean(target_spine[:, 1]))
             elif straighten_axis == "x":
                 target_spine[:, 0] = float(np.mean(target_spine[:, 0]))
 
         # Straight line from dorsal fin level to caudal peduncle along target spine
         dorsal_faces = segments.get("dorsal_fin", [])
-        tail_faces = segments.get("tail", [])
         if dorsal_faces:
             d_verts = straight_mesh.vertices[
                 np.unique(straight_mesh.faces[dorsal_faces])
@@ -944,14 +965,6 @@ class FishModels(Pipeline):
             x_dorsal = float(
                 target_spine[0, 0] + 0.4 * (target_spine[-1, 0] - target_spine[0, 0])
             )
-
-        if tail_faces:
-            t_verts = straight_mesh.vertices[np.unique(straight_mesh.faces[tail_faces])]
-            tail_mid_y = float(0.5 * (t_verts[:, 1].min() + t_verts[:, 1].max()))
-            tail_mid_z = float(0.5 * (t_verts[:, 2].min() + t_verts[:, 2].max()))
-        else:
-            tail_mid_y = float(target_spine[-1, 1])
-            tail_mid_z = float(target_spine[-1, 2])
 
         # Straight line at tail level (tail_mid_y, tail_mid_z) from the tail forward to dorsal fin x-level
         for i in range(len(target_spine)):
@@ -1120,6 +1133,14 @@ class FishModels(Pipeline):
                     k_sample = max(1, len(d_verts) // 10)
                     root_d = d_verts[y_order[:k_sample]].mean(axis=0)
                     tip_d = d_verts[y_order[-k_sample:]].mean(axis=0)
+
+                    # Threshold dorsal fin length at 0.3 of the fish length:
+                    fish_length = float(mesh.bounds[1, 0] - mesh.bounds[0, 0])
+                    max_dorsal_len = 0.3 * fish_length
+                    vec_tip_to_root = root_d - tip_d
+                    dorsal_len = float(np.linalg.norm(vec_tip_to_root))
+                    if dorsal_len > max_dorsal_len and dorsal_len > 1e-6:
+                        root_d = tip_d + (vec_tip_to_root / dorsal_len) * max_dorsal_len
 
                     parent_bone = min(
                         spine_bones[:num_body_bones],
@@ -1328,6 +1349,7 @@ class FishModels(Pipeline):
             clip.positions = clip_positions
             animator.add_animation_clip(clip)
 
+        self.model.animator = animator
         return animator
 
     def save_intermediate_artifacts(self, output_dir: str | Path) -> dict[str, Path]:

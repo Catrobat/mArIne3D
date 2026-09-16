@@ -94,3 +94,22 @@ class Pipeline(ABC):
             self.model.animator.skin_weights = self.model.skin_weights
 
         return self.model
+
+    def export(self, output_path: str | Path) -> Path:
+        """
+        Exports the pipeline's underlying model (mesh, armature, skin weights, and animation)
+        to a GLB file by delegating directly to self.model.export().
+
+        Parameters
+        ----------
+        output_path : str | Path
+            Destination file path for the exported GLB.
+
+        Returns
+        -------
+        Path
+            Path to the exported GLB file.
+        """
+        return self.model.export(
+            output_path=output_path,
+        )
