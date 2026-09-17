@@ -180,7 +180,6 @@ DEFAULT_FISH_PARAMS: dict[str, Any] = {
             "head_amplitude_ratio": 0.14,
             "growth_factor": 0.22,
             "pectoral_mode": "closed",
-            "pectoral_close_deg": 38.0,
             "dorsal_flex_deg": 2.0,
             "is_loopable": True,
         },
@@ -955,7 +954,15 @@ class FishModels(Pipeline):
             return straight_mesh
 
         # Apply Bishop-Frame Lateral Straightening along orthogonal axis (Fish/Sharks along Z)
-        if self.straighten_mesh:
+        eval_pts = self.spline.evaluate_curve(num_points_per_segment=10)
+        self.source_spine = np.array([pt.detach().cpu().numpy() for pt in eval_pts])
+        assert self.source_spine is not None
+
+        axis_idx = {"x": 0, "y": 1, "z": 2}[straighten_axis]
+        lateral_span = float(np.ptp(self.source_spine[:, axis_idx]))
+        fish_length = float(mesh.bounds[1, 0] - mesh.bounds[0, 0])
+
+        if self.straighten_mesh and lateral_span > 0.015 * fish_length:
             straight_mesh = straighten_lateral(
                 mesh,
                 spine_points=self.spline,
@@ -965,9 +972,6 @@ class FishModels(Pipeline):
             straight_mesh = mesh.copy()
 
         # Construct Target Straightened Spine along the canonical mesh coordinates
-        eval_pts = self.spline.evaluate_curve(num_points_per_segment=10)
-        self.source_spine = np.array([pt.detach().cpu().numpy() for pt in eval_pts])
-
         target_spine = self.source_spine.copy()
         if self.straighten_mesh:
             if straighten_axis == "z":
@@ -1168,6 +1172,12 @@ class FishModels(Pipeline):
                     root_d = d_verts[y_order[:k_sample]].mean(axis=0)
                     tip_d = d_verts[y_order[-k_sample:]].mean(axis=0)
 
+                    # Center the dorsal fin bone along X at the fin's median position
+                    # to anchor to the correct body spine bone rather than the trailing edge
+                    fin_mid_x = float(np.median(d_verts[:, 0]))
+                    root_d[0] = fin_mid_x
+                    tip_d[0] = fin_mid_x
+
                     # Threshold dorsal fin length at 0.3 of the fish length:
                     fish_length = float(mesh.bounds[1, 0] - mesh.bounds[0, 0])
                     max_dorsal_len = 0.3 * fish_length
@@ -1178,7 +1188,7 @@ class FishModels(Pipeline):
 
                     parent_bone = min(
                         spine_bones[:num_body_bones],
-                        key=lambda b: abs(b.head[0] - root_d[0]),
+                        key=lambda b: abs(b.head[0] - fin_mid_x),
                     )
                     fin_d = armature.add_unconnected_bone(
                         parent=parent_bone, head=tuple(root_d), tail=tuple(tip_d)
@@ -1200,7 +1210,6 @@ class FishModels(Pipeline):
         pectoral_mode: str = "active",
         pectoral_flap_deg: float = 14.0,
         pectoral_pitch_deg: float = 6.0,
-        pectoral_close_deg: float = 38.0,
         dorsal_flex_deg: float = 4.0,
     ) -> dict[float, list[np.ndarray]]:
         """
@@ -1208,8 +1217,7 @@ class FishModels(Pipeline):
 
         Steers the traveling lateral wave according to tail orientation (yaw across Z for
         vertical-tail fish, pitch across Y for horizontal-tail cetaceans). Coordinates
-        pectoral side fins (active flapping/pitching or closed streamlined tuck with minimal
-        hydrodynamic flutter) and dorsal fin stabilization.
+        pectoral side fins (active flapping/pitching or closed neutral rest pose) and dorsal fin stabilization.
 
         Parameters
         ----------
@@ -1228,13 +1236,11 @@ class FishModels(Pipeline):
         tail_orientation : str, default="vertical"
             Anatomical caudal fin plane ("vertical" for fish/sharks, "horizontal" for cetaceans).
         pectoral_mode : str, default="active"
-            Secondary pectoral fin locomotion mode ("active" for flapping, "closed" for sprint tuck).
+            Secondary pectoral fin locomotion mode ("active" for flapping, "closed" for neutral rest pose).
         pectoral_flap_deg : float, default=14.0
             Flapping roll excursion amplitude in degrees (active mode).
         pectoral_pitch_deg : float, default=6.0
             Pitching feathering excursion amplitude in degrees (active mode).
-        pectoral_close_deg : float, default=38.0
-            Streamlined tuck angle folded against the lateral torso in degrees (closed mode).
         dorsal_flex_deg : float, default=4.0
             Top dorsal fin stabilization flex amplitude in degrees.
 
@@ -1300,22 +1306,6 @@ class FishModels(Pipeline):
         omega = 2.0 * np.pi / wave_duration
         k = 2.0 * np.pi * num_waves / total_len
 
-        # Adapt tuck angles from fin rest orientation to cleanly hug the lateral body wall
-        tuck_l = np.radians(pectoral_close_deg)
-        tuck_r = np.radians(pectoral_close_deg)
-        if l_pec_idx is not None:
-            b_l = armature.bones_list[l_pec_idx]
-            v_l = np.array(b_l.tail) - np.array(b_l.head)
-            if abs(v_l[2]) > 1e-6:
-                rest_ang_l = float(np.arctan2(abs(v_l[2]), max(v_l[0], 1e-6)))
-                tuck_l = min(tuck_l, rest_ang_l)
-        if r_pec_idx is not None:
-            b_r = armature.bones_list[r_pec_idx]
-            v_r = np.array(b_r.tail) - np.array(b_r.head)
-            if abs(v_r[2]) > 1e-6:
-                rest_ang_r = float(np.arctan2(abs(v_r[2]), max(v_r[0], 1e-6)))
-                tuck_r = min(tuck_r, rest_ang_r)
-
         clip_positions: dict[float, list[np.ndarray]] = {}
 
         for t in times:
@@ -1351,28 +1341,8 @@ class FishModels(Pipeline):
             for idx_in_spine, bone_idx in enumerate(spine_indices):
                 full_frame[bone_idx] = rot_matrices[idx_in_spine].astype(np.float32)
 
-            # Pectoral Fin Kinematics
-            if pectoral_mode == "closed":
-                # Streamlined tuck tightly against lateral body wall
-                # Flutter reduced to minimal natural deflection (0.5 deg) hardcoded inside
-                flutter = np.radians(0.5) * np.sin(omega * t)
-                if l_pec_idx is not None:
-                    R_fold_l = trimesh.transformations.rotation_matrix(
-                        tuck_l, [0, 1, 0]
-                    )[:3, :3]
-                    R_roll_l = trimesh.transformations.rotation_matrix(
-                        flutter, [1, 0, 0]
-                    )[:3, :3]
-                    full_frame[l_pec_idx] = (R_fold_l @ R_roll_l).astype(np.float32)
-                if r_pec_idx is not None:
-                    R_fold_r = trimesh.transformations.rotation_matrix(
-                        -tuck_r, [0, 1, 0]
-                    )[:3, :3]
-                    R_roll_r = trimesh.transformations.rotation_matrix(
-                        -flutter, [1, 0, 0]
-                    )[:3, :3]
-                    full_frame[r_pec_idx] = (R_fold_r @ R_roll_r).astype(np.float32)
-            else:
+            # Pectoral Fin Kinematics (only animated if active; closed mode stays in neutral rest pose)
+            if pectoral_mode == "active":
                 flap_angle = np.radians(pectoral_flap_deg) * np.sin(
                     omega * t + np.pi / 4
                 )
@@ -1442,7 +1412,6 @@ class FishModels(Pipeline):
                 pectoral_mode=clip_cfg.get("pectoral_mode", "active"),
                 pectoral_flap_deg=clip_cfg.get("pectoral_flap_deg", 14.0),
                 pectoral_pitch_deg=clip_cfg.get("pectoral_pitch_deg", 6.0),
-                pectoral_close_deg=clip_cfg.get("pectoral_close_deg", 38.0),
                 dorsal_flex_deg=clip_cfg.get("dorsal_flex_deg", 4.0),
             )
 

@@ -403,7 +403,7 @@ def test_fish_generate_base_animation_public_api():
             np.testing.assert_allclose(R.T @ R, np.eye(3), atol=1e-5)
             assert np.isclose(np.linalg.det(R), 1.0, atol=1e-4)
 
-    # Closed Tucked Locomotion Mode (Sprint)
+    # Closed Locomotion Mode (Sprint)
     frames_closed = FishModels.generate_base_animation(
         armature=armature,
         wave_amplitude=0.30,
@@ -411,18 +411,15 @@ def test_fish_generate_base_animation_public_api():
         frame_rate=30.0,
         tail_orientation="vertical",
         pectoral_mode="closed",
-        pectoral_close_deg=38.0,
         dorsal_flex_deg=2.0,
     )
 
     assert len(frames_closed) == int(round(0.8 * 30.0))
-    v_rest_l = np.array(l_fin.tail) - np.array(l_fin.head)
 
-    # In closed state, ensure fin is folded inward against the body wall without flaring outward
+    # In closed state, ensure side fin animations are disabled (identity rotation)
     for t, frame in frames_closed.items():
         R_l = frame[l_idx]
-        v_anim_l = R_l @ v_rest_l
-        assert abs(v_anim_l[2]) < abs(v_rest_l[2]) + 1e-5
+        np.testing.assert_allclose(R_l, np.eye(3), atol=1e-6)
 
     # Horizontal Tail Orientation (Cetaceans / Dolphins)
     frames_horiz = FishModels.generate_base_animation(

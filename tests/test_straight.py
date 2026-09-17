@@ -101,3 +101,62 @@ def test_straighten_lateral():
     assert straight_var[0] < orig_var[0] * 0.4
     assert straight_var[1] > orig_var[1] * 0.8
     assert straight_var[2] > orig_var[2] * 0.8
+
+
+def test_welded_bishop_transport_preserves_seams():
+    """Test that deform_mesh_to_spine_numpy with weld=True preserves identical positions for duplicate seam vertices."""
+    from animgen.animation.straight import (
+        deform_mesh_to_spine_numpy,
+        compute_node_bishop_frames,
+        build_bishop_frame,
+    )
+
+    # Create a simple spine
+    spine = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.2, 0.05, 0.0],
+            [0.4, 0.1, 0.0],
+            [0.6, 0.05, 0.0],
+            [0.8, 0.0, 0.0],
+        ]
+    )
+    target_spine = spine.copy()
+    target_spine[:, 1] = 0.0
+
+    # Verify compute_node_bishop_frames orthonormality
+    T_seg, N_seg, B_seg, _, _ = build_bishop_frame(spine)
+    T_node, N_node, B_node = compute_node_bishop_frames(T_seg, N_seg, B_seg)
+    assert T_node.shape == (len(spine), 3)
+    assert np.allclose(np.linalg.norm(T_node, axis=1), 1.0, atol=1e-6)
+    assert np.allclose(np.linalg.norm(N_node, axis=1), 1.0, atol=1e-6)
+    assert np.allclose(np.linalg.norm(B_node, axis=1), 1.0, atol=1e-6)
+    assert np.allclose(np.sum(T_node * N_node, axis=1), 0.0, atol=1e-6)
+
+    # Create a mesh with deliberate duplicate vertices along a seam (e.g. vertices 0 and 3 are co-located)
+    verts = np.array(
+        [
+            [0.3, 0.2, 0.0],  # vertex 0
+            [0.4, 0.5, 0.0],  # vertex 1
+            [0.5, 0.2, 0.0],  # vertex 2
+            [0.3, 0.2, 0.0],  # vertex 3 (duplicate of vertex 0)
+            [0.4, 0.5, 0.0],  # vertex 4 (duplicate of vertex 1)
+            [0.2, 0.2, 0.0],  # vertex 5
+        ]
+    )
+    faces = np.array(
+        [
+            [0, 1, 2],
+            [3, 4, 5],
+        ]
+    )
+    mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+    deformed = deform_mesh_to_spine_numpy(mesh, spine, target_spine, weld=True)
+    # Duplicate vertices 0 and 3 must end up at the exact same location
+    diff_0_3 = np.linalg.norm(deformed.vertices[0] - deformed.vertices[3])
+    # Duplicate vertices 1 and 4 must end up at the exact same location
+    diff_1_4 = np.linalg.norm(deformed.vertices[1] - deformed.vertices[4])
+
+    assert diff_0_3 < 1e-6
+    assert diff_1_4 < 1e-6

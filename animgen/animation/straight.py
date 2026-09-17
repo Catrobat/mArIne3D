@@ -87,19 +87,102 @@ def build_bishop_frame(
     return T_seg, N_seg, B_seg, segment_lengths, s
 
 
+def compute_node_bishop_frames(
+    T_seg: np.ndarray,
+    N_seg: np.ndarray,
+    B_seg: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute continuous, orthonormal Bishop frames at curve nodes (spine points)
+    from segment frames via smooth tangent and normal interpolation.
+
+    Parameters
+    ----------
+    T_seg : (N-1, 3) ndarray
+        Segment unit tangents.
+    N_seg : (N-1, 3) ndarray
+        Segment unit normals.
+    B_seg : (N-1, 3) ndarray
+        Segment unit binormals.
+
+    Returns
+    -------
+    T_node : (N, 3) ndarray
+        Unit tangents at spine nodes.
+    N_node : (N, 3) ndarray
+        Unit normals at spine nodes.
+    B_node : (N, 3) ndarray
+        Unit binormals at spine nodes.
+    """
+    N_pts = len(T_seg) + 1
+    T_node = np.zeros((N_pts, 3), dtype=T_seg.dtype)
+    N_node = np.zeros((N_pts, 3), dtype=N_seg.dtype)
+    B_node = np.zeros((N_pts, 3), dtype=B_seg.dtype)
+
+    T_node[0] = T_seg[0]
+    N_node[0] = N_seg[0]
+    B_node[0] = B_seg[0]
+
+    T_node[-1] = T_seg[-1]
+    N_node[-1] = N_seg[-1]
+    B_node[-1] = B_seg[-1]
+
+    for i in range(1, N_pts - 1):
+        t_avg = T_seg[i - 1] + T_seg[i]
+        t_norm = np.linalg.norm(t_avg)
+        t_avg = t_avg / max(t_norm, 1e-12)
+
+        n_avg = N_seg[i - 1] + N_seg[i]
+        n_avg = n_avg - np.dot(n_avg, t_avg) * t_avg
+        n_norm = np.linalg.norm(n_avg)
+        n_avg = n_avg / max(n_norm, 1e-12)
+
+        T_node[i] = t_avg
+        N_node[i] = n_avg
+        B_node[i] = np.cross(t_avg, n_avg)
+
+    return T_node, N_node, B_node
+
+
 def deform_mesh_to_spine_numpy(
     mesh: trimesh.Trimesh,
     source_spine: np.ndarray,
     target_spine: np.ndarray,
     chunk_size: int = 10000,
+    weld: bool = True,
+    digits: int = 5,
 ) -> trimesh.Trimesh:
     """
     Deform a mesh using Bishop frame coordinate projection in pure NumPy.
     This method is geometrically exact and volume-preserving.
+
+    When weld=True, co-located duplicate vertices (such as un-welded UV seams or
+    sharp normal boundaries) are moved as a continuous, welded surface, preventing
+    seams from pulling apart or tearing during deformation.
     """
     # Build Bishop parallel transport frames along both spines
     T_src, N_src, B_src, _, _ = build_bishop_frame(source_spine)
     T_tgt, N_tgt, B_tgt, _, _ = build_bishop_frame(target_spine)
+
+    # Compute smooth orthonormal frames at curve nodes
+    T_src_node, N_src_node, B_src_node = compute_node_bishop_frames(T_src, N_src, B_src)
+    T_tgt_node, N_tgt_node, B_tgt_node = compute_node_bishop_frames(T_tgt, N_tgt, B_tgt)
+
+    # Spatially weld vertices to move duplicate / seam vertices identically
+    if weld and len(mesh.vertices) > 0:
+        unique_idx, inverse_idx = trimesh.grouping.unique_rows(
+            mesh.vertices, digits=digits
+        )
+        V_work = mesh.vertices[unique_idx]
+    else:
+        V_work = mesh.vertices
+        inverse_idx = None
+
+    # Check if spine has a primary axis with monotonic progression
+    spans = np.ptp(source_spine, axis=0)
+    long_axis = int(np.argmax(spans))
+    diffs = np.diff(source_spine[:, long_axis])
+    is_monotonic = bool(np.all(diffs > 1e-8) or np.all(diffs < -1e-8))
 
     A_src = source_spine[:-1]
     D_src = source_spine[1:] - source_spine[:-1]
@@ -110,73 +193,95 @@ def deform_mesh_to_spine_numpy(
     D_tgt = target_spine[1:] - target_spine[:-1]
 
     N_points = len(source_spine)
-    V_new = np.zeros_like(mesh.vertices)
-    num_vertices = len(mesh.vertices)
+    num_vertices = len(V_work)
+    V_new_work = np.zeros_like(V_work)
 
     # Map coordinates chunk by chunk to limit memory footprints
     for start_idx in range(0, num_vertices, chunk_size):
         end_idx = min(start_idx + chunk_size, num_vertices)
-        V_chunk = mesh.vertices[start_idx:end_idx]
+        V_chunk = V_work[start_idx:end_idx]
 
-        # Calculate squared distance from all vertices in the chunk to all segments
-        disp = V_chunk[:, None, :] - A_src[None, :, :]
-        dot = np.sum(disp * D_src[None, :, :], axis=2)
-        t_val = np.clip(dot / L2_src[None, :], 0.0, 1.0)
-        proj = A_src[None, :, :] + t_val[:, :, None] * D_src[None, :, :]
-        dist2 = np.sum((V_chunk[:, None, :] - proj) ** 2, axis=2)
+        if is_monotonic:
+            x_spine = source_spine[:, long_axis]
+            x_verts = V_chunk[:, long_axis]
+            if diffs[0] < 0:
+                x_rev = x_spine[::-1]
+                rev_idx = np.searchsorted(x_rev, x_verts) - 1
+                seg_idx = (len(x_spine) - 2) - rev_idx
+            else:
+                seg_idx = np.searchsorted(x_spine, x_verts) - 1
+            seg_idx = np.clip(seg_idx, 0, N_points - 2)
 
-        # Get index of closest segment for each vertex in the chunk
-        closest_seg = np.argmin(dist2, axis=1)
-        row_indices = np.arange(len(V_chunk))
-        t_star = t_val[row_indices, closest_seg]
+            x0 = x_spine[seg_idx]
+            x1 = x_spine[seg_idx + 1]
+            dx = x1 - x0
+            dx = np.where(np.abs(dx) < 1e-12, 1e-12, dx)
+            t_star = np.clip((x_verts - x0) / dx, 0.0, 1.0)[:, None]
+            closest_seg = seg_idx
+            P_closest_src = A_src[closest_seg] + t_star * D_src[closest_seg]
+        else:
+            disp = V_chunk[:, None, :] - A_src[None, :, :]
+            dot = np.sum(disp * D_src[None, :, :], axis=2)
+            t_val = np.clip(dot / L2_src[None, :], 0.0, 1.0)
+            proj = A_src[None, :, :] + t_val[:, :, None] * D_src[None, :, :]
+            dist2 = np.sum((V_chunk[:, None, :] - proj) ** 2, axis=2)
+            closest_seg = np.argmin(dist2, axis=1)
+            row_indices = np.arange(len(V_chunk))
+            t_star = t_val[row_indices, closest_seg, None]
+            P_closest_src = proj[row_indices, closest_seg]
 
-        # Extract source closest point and map it linearly to the target spine
-        P_closest_src = proj[row_indices, closest_seg]
-        P_closest_tgt = A_tgt[closest_seg] + t_star[:, None] * D_tgt[closest_seg]
+        P_closest_tgt = A_tgt[closest_seg] + t_star * D_tgt[closest_seg]
 
-        # Gather frame vectors for source
-        T_v_src = T_src[closest_seg]
-        N_v_src_curr = N_src[closest_seg]
-        next_seg = np.minimum(closest_seg + 1, N_points - 2)
-        N_v_src_next = N_src[next_seg]
+        # Continuous Bishop frame interpolation for source spine
+        T_0_src = T_src_node[closest_seg]
+        T_1_src = T_src_node[closest_seg + 1]
+        T_v_src = (1.0 - t_star) * T_0_src + t_star * T_1_src
+        T_v_src = T_v_src / np.maximum(
+            np.linalg.norm(T_v_src, axis=1, keepdims=True), 1e-12
+        )
 
-        N_v_src = (1.0 - t_star[:, None]) * N_v_src_curr + t_star[
-            :, None
-        ] * N_v_src_next
+        N_0_src = N_src_node[closest_seg]
+        N_1_src = N_src_node[closest_seg + 1]
+        N_v_src = (1.0 - t_star) * N_0_src + t_star * N_1_src
         N_v_src = N_v_src - np.sum(N_v_src * T_v_src, axis=1, keepdims=True) * T_v_src
-        N_v_src_norm = np.linalg.norm(N_v_src, axis=1, keepdims=True)
-        N_v_src = N_v_src / np.maximum(N_v_src_norm, 1e-12)
+        N_v_src = N_v_src / np.maximum(
+            np.linalg.norm(N_v_src, axis=1, keepdims=True), 1e-12
+        )
         B_v_src = np.cross(T_v_src, N_v_src)
 
-        # Gather frame vectors for target
-        T_v_tgt = T_tgt[closest_seg]
-        N_v_tgt_curr = N_tgt[closest_seg]
-        N_v_tgt_next = N_tgt[next_seg]
+        # Continuous Bishop frame interpolation for target spine
+        T_0_tgt = T_tgt_node[closest_seg]
+        T_1_tgt = T_tgt_node[closest_seg + 1]
+        T_v_tgt = (1.0 - t_star) * T_0_tgt + t_star * T_1_tgt
+        T_v_tgt = T_v_tgt / np.maximum(
+            np.linalg.norm(T_v_tgt, axis=1, keepdims=True), 1e-12
+        )
 
-        N_v_tgt = (1.0 - t_star[:, None]) * N_v_tgt_curr + t_star[
-            :, None
-        ] * N_v_tgt_next
+        N_0_tgt = N_tgt_node[closest_seg]
+        N_1_tgt = N_tgt_node[closest_seg + 1]
+        N_v_tgt = (1.0 - t_star) * N_0_tgt + t_star * N_1_tgt
         N_v_tgt = N_v_tgt - np.sum(N_v_tgt * T_v_tgt, axis=1, keepdims=True) * T_v_tgt
-        N_v_tgt_norm = np.linalg.norm(N_v_tgt, axis=1, keepdims=True)
-        N_v_tgt = N_v_tgt / np.maximum(N_v_tgt_norm, 1e-12)
+        N_v_tgt = N_v_tgt / np.maximum(
+            np.linalg.norm(N_v_tgt, axis=1, keepdims=True), 1e-12
+        )
         B_v_tgt = np.cross(T_v_tgt, N_v_tgt)
 
         # Relative coordinates in source frame
         d_vec = V_chunk - P_closest_src
-        x = np.sum(d_vec * N_v_src, axis=1)
-        y = np.sum(d_vec * B_v_src, axis=1)
-        z = np.sum(d_vec * T_v_src, axis=1)
+        x = np.sum(d_vec * N_v_src, axis=1, keepdims=True)
+        y = np.sum(d_vec * B_v_src, axis=1, keepdims=True)
+        z = np.sum(d_vec * T_v_src, axis=1, keepdims=True)
 
         # Reconstruct coordinates in target frame
-        V_new[start_idx:end_idx] = (
-            P_closest_tgt
-            + x[:, None] * N_v_tgt
-            + y[:, None] * B_v_tgt
-            + z[:, None] * T_v_tgt
+        V_new_work[start_idx:end_idx] = (
+            P_closest_tgt + x * N_v_tgt + y * B_v_tgt + z * T_v_tgt
         )
 
     deformed_mesh = mesh.copy()
-    deformed_mesh.vertices = V_new
+    if inverse_idx is not None:
+        deformed_mesh.vertices = V_new_work[inverse_idx]
+    else:
+        deformed_mesh.vertices = V_new_work
     return deformed_mesh
 
 
@@ -185,11 +290,15 @@ def deform_mesh_to_spine(
     source_spine: np.ndarray,
     target_spine: np.ndarray,
     chunk_size: int = 10000,
+    weld: bool = True,
+    digits: int = 5,
 ) -> trimesh.Trimesh:
     """
     Deforms a mesh from a source spine to a target spine using Bishop parallel transport frames.
     """
-    return deform_mesh_to_spine_numpy(mesh, source_spine, target_spine, chunk_size)
+    return deform_mesh_to_spine_numpy(
+        mesh, source_spine, target_spine, chunk_size, weld=weld, digits=digits
+    )
 
 
 def resolve_spine_points(
