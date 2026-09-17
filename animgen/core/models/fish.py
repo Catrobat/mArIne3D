@@ -374,6 +374,28 @@ class FishModels(Pipeline):
         elif not self.use_sam and self.face_prompt_detected is None:
             self.face_prompt_detected = None
 
+        # Check orientation via SAM tail prompt and align to canonical orientation:
+        # Head/snout at -X, Tail at +X
+        if (
+            self.face_prompt_detected is not None
+            and "tail" in self.face_prompt_detected
+        ):
+            tail_votes = self.face_prompt_detected["tail"]
+            # Look for faces voted as tail
+            tail_candidate_faces = np.where(tail_votes >= 2)[0]
+            if len(tail_candidate_faces) < 5:
+                tail_candidate_faces = np.where(tail_votes >= 1)[0]
+
+            if len(tail_candidate_faces) > 0:
+                face_centroids = mesh.triangles.mean(axis=1)
+                tail_mean_x = float(face_centroids[tail_candidate_faces, 0].mean())
+                x_mid = 0.5 * (float(mesh.bounds[0, 0]) + float(mesh.bounds[1, 0]))
+
+                if tail_mean_x < x_mid:
+                    # Tail is at -X, rotate 180 degrees around Y so tail is at +X
+                    rot_180 = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
+                    mesh.apply_transform(rot_180)
+
         # 3D Shape Diameter Function (SDF)
         try:
             sdf = shape_diameter_function(mesh, norm=True)
@@ -913,7 +935,7 @@ class FishModels(Pipeline):
             t_verts = mesh.vertices[np.unique(mesh.faces[tail_faces])]
             tail_mid_y = float(0.5 * (t_verts[:, 1].min() + t_verts[:, 1].max()))
             tail_mid_z = float(0.5 * (t_verts[:, 2].min() + t_verts[:, 2].max()))
-            x_tail_start = float(tail_verts[:, 0].min())
+            x_tail_start = float(t_verts[:, 0].min())
         else:
             tail_mid_y = float(spine_pts[-1, 1])
             tail_mid_z = float(spine_pts[-1, 2])
@@ -964,6 +986,18 @@ class FishModels(Pipeline):
         else:
             x_dorsal = float(
                 target_spine[0, 0] + 0.4 * (target_spine[-1, 0] - target_spine[0, 0])
+            )
+
+        # Update caudal tail mid y/z from straightened mesh coordinates so spine matches canonical mesh
+        if tail_faces:
+            t_verts_straight = straight_mesh.vertices[
+                np.unique(straight_mesh.faces[tail_faces])
+            ]
+            tail_mid_y = float(
+                0.5 * (t_verts_straight[:, 1].min() + t_verts_straight[:, 1].max())
+            )
+            tail_mid_z = float(
+                0.5 * (t_verts_straight[:, 2].min() + t_verts_straight[:, 2].max())
             )
 
         # Straight line at tail level (tail_mid_y, tail_mid_z) from the tail forward to dorsal fin x-level
@@ -1422,10 +1456,10 @@ class FishModels(Pipeline):
             self.model.mesh.export(p4)
             saved_files["04_canonical_mesh"] = p4
 
-        # Rigged Armature GLB
+        # Rigged Armature GLB (static rest-pose armature without animations)
         if self.model.armature is not None:
             p5 = out_path / "05_rigged_armature.glb"
-            self.model.export(p5)
+            self.model.export(p5, animation=None)
             saved_files["05_rigged_armature"] = p5
 
         # Animated Fish GLB

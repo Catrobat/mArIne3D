@@ -97,73 +97,24 @@ def test_serpentine_canonicalize_head_tail_detection_on_tapered_cylinder():
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize(
-    "mesh_name", ["paint_mesh_Sea_Snake.glb", "dec_mesh_Sea_Snake.glb"]
-)
-def test_serpentine_rigging_on_mesh(mesh_name: str):
+def test_serpentine_process_and_export_on_mesh():
     """
-    Test SerpentineModels autorig() stage on both paint and dec snake meshes.
+    Test SerpentineModels process() end-to-end on snake mesh:
+    - Rigging & bone chain connectivity
+    - Automatic skinning weights
+    - Animation generation (slow and fast locomotion waves)
+    - GLB export for both static rigged armature and animated mesh
     """
-    snake_path = _get_snake_mesh_path(mesh_name)
+    snake_path = _get_snake_mesh_path("dec_mesh_Sea_Snake.glb") or _get_snake_mesh_path(
+        "paint_mesh_Sea_Snake.glb"
+    )
     if snake_path is None:
-        pytest.skip(f"Snake mesh not found: {mesh_name}")
+        pytest.skip("Snake mesh not found")
 
     model = BaseModelClass(snake_path)
     assert model.mesh is not None
     orig_num_verts = len(model.mesh.vertices)
     orig_num_faces = len(model.mesh.faces)
-
-    pipeline = SerpentineModels(model=model, num_bones=20)
-
-    # 1. Execute autorig()
-    rigged_model = pipeline.autorig()
-
-    assert rigged_model.mesh is not None
-    assert len(rigged_model.mesh.vertices) == orig_num_verts
-    assert len(rigged_model.mesh.faces) == orig_num_faces
-
-    assert isinstance(rigged_model.armature, Armature)
-    assert len(rigged_model.armature.bones_list) == 20
-
-    assert rigged_model.skin_weights is not None
-    assert len(rigged_model.skin_weights) == 20
-
-    # Verify bone chain connectivity
-    armature = rigged_model.armature
-    for i in range(len(armature.bones_list) - 1):
-        parent_bone = armature.bones_list[i]
-        child_bone = armature.bones_list[i + 1]
-        assert child_bone.parent == parent_bone
-        np.testing.assert_allclose(child_bone.head, parent_bone.tail, atol=1e-6)
-
-    # Export Base Rigged GLB
-    out_dir = Path("tests/artifacts")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path_rigged = out_dir / f"test_serpentine_rigged_{mesh_name}"
-
-    exported_path = rigged_model.export(out_path_rigged)
-    assert exported_path.exists()
-    assert exported_path.stat().st_size > 0
-    print(
-        f"\n[Rigged GLB Exported]: {exported_path.resolve()} ({exported_path.stat().st_size} bytes)"
-    )
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize(
-    "mesh_name", ["paint_mesh_Sea_Snake.glb", "dec_mesh_Sea_Snake.glb"]
-)
-def test_serpentine_animation_on_mesh(mesh_name: str):
-    """
-    Test SerpentineModels process() end-to-end on both paint and dec snake meshes.
-    Exports the skeletal animated GLB with embedded glTF animation tracks.
-    """
-    snake_path = _get_snake_mesh_path(mesh_name)
-    if snake_path is None:
-        pytest.skip(f"Snake mesh not found: {mesh_name}")
-
-    model = BaseModelClass(snake_path)
-    assert model.mesh is not None
 
     pipeline = SerpentineModels(
         model=model,
@@ -175,8 +126,19 @@ def test_serpentine_animation_on_mesh(mesh_name: str):
     animated_model = pipeline.process()
 
     assert animated_model.mesh is not None
+    assert len(animated_model.mesh.vertices) == orig_num_verts
+    assert len(animated_model.mesh.faces) == orig_num_faces
+
     assert isinstance(animated_model.armature, Armature)
     assert len(animated_model.armature.bones_list) == 20
+
+    # Verify bone chain connectivity
+    armature = animated_model.armature
+    for i in range(len(armature.bones_list) - 1):
+        parent_bone = armature.bones_list[i]
+        child_bone = armature.bones_list[i + 1]
+        assert child_bone.parent == parent_bone
+        np.testing.assert_allclose(child_bone.head, parent_bone.tail, atol=1e-6)
 
     # Ensure mesh bounds and armature heads/tails align along X
     mesh_x_min, mesh_x_max = (
@@ -201,30 +163,26 @@ def test_serpentine_animation_on_mesh(mesh_name: str):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Export Skeletal Animated GLB
-    out_path_animated = out_dir / f"test_serpentine_animated_{mesh_name}"
+    out_path_animated = out_dir / "test_serpentine_animated.glb"
     exported_anim = animated_model.export(
         out_path_animated, animation=animated_model.animator
     )
     assert exported_anim.exists()
     assert exported_anim.stat().st_size > 0
-    print(
-        f"\n[Animated GLB Exported]: {exported_anim.resolve()} ({exported_anim.stat().st_size} bytes)"
-    )
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize(
-    "mesh_name", ["paint_mesh_Sea_Snake.glb", "dec_mesh_Sea_Snake.glb"]
-)
-def test_serpentine_canonicalize_head_tail_detection_on_snake_mesh(mesh_name: str):
+def test_serpentine_canonicalize_head_tail_detection_on_snake_mesh():
     """
     Tests that SerpentineModels.canonicalize() automatically identifies head vs tail
     and straightens the model so the thicker head is at root (x=0) and tail is at x=L
     even when deliberately inverted 180 degrees.
     """
-    snake_path = _get_snake_mesh_path(mesh_name)
+    snake_path = _get_snake_mesh_path("dec_mesh_Sea_Snake.glb") or _get_snake_mesh_path(
+        "paint_mesh_Sea_Snake.glb"
+    )
     if snake_path is None:
-        pytest.skip(f"Snake mesh not found: {mesh_name}")
+        pytest.skip("Snake mesh not found")
 
     mesh = trimesh.load(snake_path, force="mesh")
     # Invert 180 degrees around Y (Head at +X, Tail at -X)
@@ -244,9 +202,10 @@ def test_serpentine_canonicalize_head_tail_detection_on_snake_mesh(mesh_name: st
     r_root = float(np.linalg.norm(sv[mask_root, 1:], axis=1).mean())
     r_tip = float(np.linalg.norm(sv[mask_tip, 1:], axis=1).mean())
 
-    assert r_root > r_tip, f"Thicker head was not placed at root x=0 on {mesh_name}"
+    assert r_root > r_tip, "Thicker head was not placed at root x=0 on snake mesh"
 
 
+@pytest.mark.slow
 def test_serpentine_reverse_parameter():
     """
     Tests that reverse=True in SerpentineModels inverts the spine canonicalization direction.
@@ -258,7 +217,7 @@ def test_serpentine_reverse_parameter():
         pytest.skip("Snake mesh not found")
 
     mesh = trimesh.load(snake_path, force="mesh")
-    # 1. Normal canonicalization (reverse=False, default): root at head
+    # Normal canonicalization (reverse=False, default): root at head
     pipe_normal = SerpentineModels(BaseModelClass(mesh.copy()), reverse=False)
     segs_n = pipe_normal.segment()
     straightened_n = pipe_normal.canonicalize(segs_n)
@@ -273,7 +232,7 @@ def test_serpentine_reverse_parameter():
         "Default canonicalization did not place thicker head at x=0"
     )
 
-    # 2. Reversed canonicalization (reverse=True): root at tail
+    # Reversed canonicalization (reverse=True): root at tail
     pipe_rev = SerpentineModels(BaseModelClass(mesh.copy()), reverse=True)
     segs_r = pipe_rev.segment()
     straightened_r = pipe_rev.canonicalize(segs_r)

@@ -135,17 +135,51 @@ class BaseModelClass:
     def export(
         self,
         output_path: str | Path,
+        animation: Any = ...,
+        armature: Armature | None = None,
+        skin_weights: dict[str, np.ndarray] | None = None,
     ) -> Path:
         """
         Exports the model's mesh, armature, and optional animation to a GLB file.
+
+        Parameters
+        ----------
+        output_path : str | Path
+            Destination file path for the exported GLB.
+        animation : Any, optional
+            Animation track/clip/animator to export. If Ellipsis (...), defaults to
+            self.animator.clips (or self.animator). Pass None explicitly to export a static
+            rigged mesh without animations.
+        armature : Armature | None, optional
+            Armature to export. If None, defaults to self.armature.
+        skin_weights : dict[str, np.ndarray] | None, optional
+            Skin weights to export. If None, defaults to self.skin_weights.
+
+        Returns
+        -------
+        Path
+            The path to the exported GLB file.
         """
-        if self.armature is not None and self.skin_weights is None:
+        export_armature = armature if armature is not None else self.armature
+        if (
+            export_armature is not None
+            and skin_weights is None
+            and self.skin_weights is None
+        ):
             self.compute_skin_weights()
+        export_skin_weights = (
+            skin_weights if skin_weights is not None else self.skin_weights
+        )
+
+        if animation is ...:
+            export_anim = self.animator.clips if self.animator is not None else None
+        else:
+            export_anim = animation
 
         return export_glb(
             mesh=self.mesh,
             output_path=output_path,
-            armature=self.armature,
-            skin_weights=self.skin_weights,
-            animation=self.animator.clips if self.animator is not None else None,
+            armature=export_armature,
+            skin_weights=export_skin_weights,
+            animation=export_anim,
         )

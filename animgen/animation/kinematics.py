@@ -130,9 +130,9 @@ def successive_rotations(
     R_accum = torch.eye(3, dtype=torch.float64, device=src_t.device)
 
     for i in range(N):
-        src_rotated = R_accum @ src_t[i]
-        R_local = rotation_matrix_from_vectors(src_rotated, tgt_t[i])
+        tgt_in_parent = R_accum.T @ tgt_t[i]
+        R_local = rotation_matrix_from_vectors(src_t[i], tgt_in_parent)
         rotations.append(R_local)
-        R_accum = R_local @ R_accum
+        R_accum = R_accum @ R_local
 
     return rotations

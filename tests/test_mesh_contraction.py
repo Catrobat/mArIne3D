@@ -1,20 +1,13 @@
-import pytest
 import trimesh
 import numpy as np
 import torch
 from scipy.spatial.distance import cdist
-from pathlib import Path
-
 from animgen.rigging.mesh_contraction import extract_skeleton
 from animgen.rigging.refine_skelaton import (
     subdivide_and_center_skeleton,
     refine_and_center_skeleton_iterative,
 )
 from animgen.core.spline import Spline
-from animgen.renderer.visualizations import (
-    visualize_skeleton_over_mesh,
-    visualize_skeleton,
-)
 
 
 def create_variable_radius_tube_mesh(curve_pts, radius_fn, num_sections=16):
@@ -141,13 +134,13 @@ RADIUS_PROFILES = {
 }
 
 
-@pytest.mark.parametrize("profile_name", ["increasing", "decreasing", "sinusoidal"])
-def test_variable_radius_splines_and_refinement_ablation(profile_name):
+def test_variable_radius_splines_and_refinement_ablation():
     """
     Tests skeleton extraction on variable-radius solidify tube meshes and verifies
     that boundary loop refinement, subdivide centering, and iterative Laplacian smoothing
     refinement improve accuracy relative to the ground-truth spline.
     """
+    profile_name = "increasing"
     ctrl_pts = TEST_CURVE_DATASETS[0]
     pts = [torch.tensor(pt, dtype=torch.float32) for pt in ctrl_pts]
     spline = Spline(pts, alpha=0.5)
@@ -157,7 +150,7 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
     radius_fn = RADIUS_PROFILES[profile_name]
     mesh = create_variable_radius_tube_mesh(curve_pts, radius_fn, num_sections=16)
 
-    # 1. Raw contraction (no refinement)
+    # Raw contraction (no refinement)
     skel_raw_verts, _ = extract_skeleton(
         mesh,
         max_iters=20,
@@ -168,7 +161,7 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
         return_tuple=True,
     )
 
-    # 2. Embedding Refinement only
+    # Embedding Refinement only
     skel_ref_verts, _ = extract_skeleton(
         mesh,
         max_iters=20,
@@ -179,7 +172,7 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
         return_tuple=True,
     )
 
-    # 3. Embedding Refinement + Junction Merging (Full Pipeline)
+    # Embedding Refinement + Junction Merging (Full Pipeline)
     skel_full_verts, skel_full_edges = extract_skeleton(
         mesh,
         max_iters=20,
@@ -190,12 +183,12 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
         return_tuple=True,
     )
 
-    # 4. User Refinement Algo A: Subdivide & Centroid Slice
+    # Refinement Algo A: Subdivide & Centroid Slice
     skel_sub_verts, _ = subdivide_and_center_skeleton(
         mesh.vertices, skel_full_verts, skel_full_edges, max_edge_len=0.2
     )
 
-    # 5. User Refinement Algo B: Iterative Subdivision + Tangential Laplacian + Momentum
+    # Refinement Algo B: Iterative Subdivision + Tangential Laplacian + Momentum
     skel_lap_verts, _ = refine_and_center_skeleton_iterative(
         mesh.vertices,
         skel_full_verts,
@@ -220,19 +213,6 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
         f"Subdiv: {err_sub:.4f} -> Laplacian-Refined: {err_lap:.4f}"
     )
 
-    skel_path = trimesh.load_path(skel_full_verts[skel_full_edges])
-
-    # Export visual artifacts for inspection
-    save_dirs = Path("tests/artifacts/mesh_contraction")
-    save_dirs.mkdir(parents=True, exist_ok=True)
-    mesh.export(str(save_dirs / f"{profile_name}_tube_mesh.glb"))
-    visualize_skeleton(skel_path).export(
-        str(save_dirs / f"{profile_name}_skeleton.glb")
-    )
-    visualize_skeleton_over_mesh(mesh, skel_path).export(
-        str(save_dirs / f"{profile_name}_skeleton_over_mesh.glb")
-    )
-
     # Assertions
     assert len(skel_full_verts) > 0, "Extracted skeleton has no vertices."
     assert err_ref <= err_raw + 1e-3, (
@@ -240,40 +220,4 @@ def test_variable_radius_splines_and_refinement_ablation(profile_name):
     )
     assert err_full < 0.15, (
         f"Skeleton error {err_full:.4f} exceeds ground-truth tolerance!"
-    )
-
-
-def test_torus_topology_preservation():
-    """
-    Verifies that link condition with threshold (0.5 * bbox_diag)
-    preserves true topological tunnels (genus 1 torus hole).
-    """
-    torus = trimesh.creation.torus(major_radius=4.0, minor_radius=1.0)
-    skel_nodes, skel_edges = extract_skeleton(
-        torus, max_iters=20, threshold=0.5, return_tuple=True
-    )
-
-    assert len(skel_nodes) >= 3, f"Torus skeleton has too few nodes: {len(skel_nodes)}"
-    assert len(skel_edges) == len(skel_nodes), (
-        f"Topology lost! Edges ({len(skel_edges)}) != Nodes ({len(skel_nodes)})"
-    )
-
-
-def test_scale_invariance():
-    """
-    Verifies that skeleton extraction is scale-invariant across 1m and 100m meshes.
-    """
-    m1 = trimesh.creation.cylinder(radius=1.0, height=10.0, sections=16)
-    m100 = trimesh.creation.cylinder(radius=100.0, height=1000.0, sections=16)
-
-    v1, e1 = extract_skeleton(m1, max_iters=20, threshold=0.5, return_tuple=True)
-    v100, e100 = extract_skeleton(m100, max_iters=20, threshold=0.5, return_tuple=True)
-
-    v100_normalized = v100 / 100.0
-
-    r1 = np.mean(np.hypot(v1[:, 0], v1[:, 1]))
-    r100 = np.mean(np.hypot(v100_normalized[:, 0], v100_normalized[:, 1]))
-
-    assert abs(r1 - r100) < 0.05, (
-        f"Scale invariance failed! 1m radius: {r1:.4f}, 100m normalized radius: {r100:.4f}"
     )

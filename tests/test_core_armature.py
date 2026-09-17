@@ -5,7 +5,7 @@ from animgen.core.armature import Bone, Armature
 
 def test_bone_and_armature_structure():
     """Test basic bone creation and armature hierarchy building."""
-    # 1. Root bone
+    # Root bone
     root = Bone(head=(0.0, 0.0, 0.0), tail=(0.0, 0.0, 1.0))
     assert root.parent is None
     assert root.head == (0.0, 0.0, 0.0)
@@ -15,7 +15,7 @@ def test_bone_and_armature_structure():
     assert armature.root_bone == root
     assert len(armature.bones_list) == 1
 
-    # 2. Add connected bone
+    # Add connected bone
     bone_1 = armature.add_connected_bone(root, tail=(0.0, 1.0, 1.0))
     assert bone_1.parent == root
     assert bone_1.head == root.tail
@@ -23,7 +23,7 @@ def test_bone_and_armature_structure():
     assert len(armature.bones_list) == 2
     assert bone_1 in root.child
 
-    # 3. Add unconnected bone
+    # Add unconnected bone
     bone_2 = armature.add_unconnected_bone(
         bone_1, head=(1.0, 1.0, 1.0), tail=(2.0, 1.0, 1.0)
     )

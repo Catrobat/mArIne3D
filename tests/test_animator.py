@@ -23,6 +23,7 @@ from animgen.utils.math import (
     quaternion_multiply,
     quaternion_slerp,
     quaternion_to_rotation_matrix,
+    rotation_matrix_from_vectors,
     rotation_matrix_to_quaternion,
     slerp_rotation_matrix,
 )
@@ -127,26 +128,126 @@ def test_compute_forward_kinematics():
     np.testing.assert_allclose(positions[b2.id][0], [1.0, -1.0, 0.0], atol=1e-6)
 
 
-def test_successive_rotations():
-    # Straight chain along X
-    src = np.array(
-        [
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-        ]
+def test_fk_chain_generation_and_rotation_decomposition_inverse():
+    """
+    Combined test verifying that Forward Kinematics, rotation vector decomposition,
+    and procedural chain generation work seamlessly in an inverse, bidirectional manner:
+    - rotation_matrix_from_vectors aligns arbitrary vectors and its transpose inverts alignment
+    - successive_rotations correctly breaks down target joint curves into local rotations
+    - compute_forward_kinematics re-synthesizes posed joint positions from decomposed rotations
+       matching the original target curve with high precision (exact inverse)
+    - chain_wave_generator animation frames invert from posed joint positions back into identical
+       local rotations and posed states (roundtrip consistency)
+    - Bone lengths are conserved strictly throughout forward and inverse transformations
+    """
+    # --- Rotation vector alignment and inverse ---
+    v_src = np.array([1.2, -0.4, 0.7])
+    v_tgt = np.array([-0.5, 0.9, 0.3])
+    R_vec = rotation_matrix_from_vectors(v_src, v_tgt)
+    if hasattr(R_vec, "detach"):
+        R_vec = R_vec.detach().cpu().numpy()
+
+    v_src_u = v_src / np.linalg.norm(v_src)
+    v_tgt_u = v_tgt / np.linalg.norm(v_tgt)
+    # Forward: R maps v_src to v_tgt
+    np.testing.assert_allclose(R_vec @ v_src_u, v_tgt_u, atol=1e-6)
+    # Inverse: R.T maps v_tgt back to v_src
+    np.testing.assert_allclose(R_vec.T @ v_tgt_u, v_src_u, atol=1e-6)
+
+    # Parallel & antipodal edge cases
+    R_ident = rotation_matrix_from_vectors(v_src, v_src)
+    np.testing.assert_allclose(R_ident, np.eye(3), atol=1e-6)
+    R_anti = rotation_matrix_from_vectors(
+        np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 0.0])
     )
-    # Target bent 90 degrees at joint 0
-    tgt = np.array(
-        [
-            [0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ]
+    np.testing.assert_allclose(
+        R_anti @ np.array([1.0, 0.0, 0.0]), np.array([-1.0, 0.0, 0.0]), atol=1e-6
     )
-    rotations = successive_rotations(src, tgt)
-    assert len(rotations) == 2
-    # Joint 0 rotates 90 degrees around Z: [1,0,0] -> [0,1,0]
-    # Joint 1 needs no additional relative rotation because parent already aligned the second segment
-    np.testing.assert_allclose(rotations[1].numpy(), np.eye(3), atol=1e-5)
+
+    # --- Right-angle relative rotation check on 2-segment chain ---
+    src_chain = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    tgt_chain = np.array([[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]])
+    simple_rots = successive_rotations(src_chain, tgt_chain)
+    assert len(simple_rots) == 2
+    # Joint 0 rotates 90 degrees around Z; Joint 1 needs no extra relative rotation
+    np.testing.assert_allclose(simple_rots[1].numpy(), np.eye(3), atol=1e-5)
+
+    # --- Arbitrary 3D non-planar curve decomposition & FK re-synthesis ---
+    num_bones = 6
+    root = Bone(id="b0", head=(0.0, 0.0, 0.0), tail=(1.0, 0.0, 0.0))
+    armature = Armature(root)
+    prev = root
+    for i in range(1, num_bones):
+        prev = armature.add_connected_bone(prev, tail=(float(i + 1), 0.0, 0.0))
+        prev.id = f"b{i}"
+
+    rest_positions = np.array([[float(i), 0.0, 0.0] for i in range(num_bones + 1)])
+
+    # Construct an arbitrary complex 3D non-planar target curve with identical segment lengths (1.0)
+    angles = np.linspace(0.1, np.pi * 0.8, num_bones)
+    tangents = np.column_stack(
+        [np.cos(angles), np.sin(angles), 0.4 * np.sin(2.5 * angles)]
+    )
+    tangents = tangents / np.linalg.norm(tangents, axis=1, keepdims=True)
+
+    target_positions = [np.array([0.0, 0.0, 0.0])]
+    for t in tangents:
+        target_positions.append(target_positions[-1] + t)
+    target_positions = np.array(target_positions)
+
+    # Break down target curve into local rotations
+    decomposed_rotations = successive_rotations(
+        rest_positions, target_positions, is_positions=True
+    )
+
+    # Re-synthesize joint positions using Forward Kinematics
+    _, pos_fk = compute_forward_kinematics(armature, decomposed_rotations)
+    reconstructed_positions = np.array(
+        [pos_fk["b0"][0]] + [pos_fk[b.id][1] for b in armature.bones_list]
+    )
+
+    # Forward Kinematics perfectly reproduces the target positions in an inverse manner
+    np.testing.assert_allclose(reconstructed_positions, target_positions, atol=1e-5)
+
+    # Verify bone lengths are perfectly conserved
+    initial_lengths = [
+        np.linalg.norm(np.array(b.tail) - np.array(b.head)) for b in armature.bones_list
+    ]
+    for i, b in enumerate(armature.bones_list):
+        h, t = pos_fk[b.id]
+        assert np.isclose(np.linalg.norm(t - h), initial_lengths[i], atol=1e-5)
+
+    # --- Procedural chain wave roundtrip inversion ---
+    index_bones = list(range(num_bones))
+    wave_anim = chain_wave_generator(
+        armature=armature,
+        index_bones=index_bones,
+        wave_amplitude=0.35,
+        wave_duration=2.0,
+        frame_rate=5.0,
+        wave="travelling",
+    )
+
+    for timestamp, frame_rotations in wave_anim.items():
+        # Evaluate FK to get posed bone positions
+        _, original_fk = compute_forward_kinematics(armature, frame_rotations)
+        original_joints = np.array(
+            [original_fk["b0"][0]] + [original_fk[b.id][1] for b in armature.bones_list]
+        )
+
+        # Invert: decompose posed joint positions back into local rotations
+        inverted_rotations = successive_rotations(
+            rest_positions, original_joints, is_positions=True
+        )
+
+        # Re-evaluate FK on inverted rotations
+        _, inverted_fk = compute_forward_kinematics(armature, inverted_rotations)
+        inverted_joints = np.array(
+            [inverted_fk["b0"][0]] + [inverted_fk[b.id][1] for b in armature.bones_list]
+        )
+
+        # Exact position roundtrip match
+        np.testing.assert_allclose(inverted_joints, original_joints, atol=1e-5)
 
 
 def test_dqs_and_lbs_mesh_deformation():
@@ -479,13 +580,13 @@ def test_animation_clip_steer_rotation():
 def test_animation_clip_timeline_offset_and_wave_phi_t():
     """
     Test the distinction between:
-    1. timeline_offset: delays/shifts when the movement begins on the clip timeline.
-    2. phi_t: temporal phase offset in the wave equation (shifts starting wave phase at t=0).
+    - timeline_offset: delays/shifts when the movement begins on the clip timeline.
+    - phi_t: temporal phase offset in the wave equation (shifts starting wave phase at t=0).
     """
     root = Bone(id="b0", head=(0.0, 0.0, 0.0), tail=(1.0, 0.0, 0.0))
     armature = Armature(root)
 
-    # 1. Base reference wave (starts at t=0, wave cycle phi_t=0)
+    # Base reference wave (starts at t=0, wave cycle phi_t=0)
     clip_base = AnimationClip(name="Base", duration=2.0, armature=armature)
     clip_base.add_animation_movements(
         chain_wave_generator,
@@ -498,7 +599,7 @@ def test_animation_clip_timeline_offset_and_wave_phi_t():
     )
     anim_base = clip_base.generate_animation()
 
-    # 2. phi_t = -pi/2 (Quarter-cycle temporal phase shift: sin(ks - omega*t - pi/2) at t=0 matches t=0.5s)
+    # phi_t = -pi/2 (Quarter-cycle temporal phase shift: sin(ks - omega*t - pi/2) at t=0 matches t=0.5s)
     clip_phase = AnimationClip(name="PhaseOffset", duration=2.0, armature=armature)
     clip_phase.add_animation_movements(
         chain_wave_generator,
@@ -520,7 +621,7 @@ def test_animation_clip_timeline_offset_and_wave_phi_t():
         atol=1e-4,
     )
 
-    # 3. timeline_offset = 0.5s (Delays the movement to start at t=0.5 on the timeline)
+    # timeline_offset = 0.5s (Delays the movement to start at t=0.5 on the timeline)
     clip_tl_offset = AnimationClip(
         name="TimelineOffset", duration=2.0, armature=armature
     )

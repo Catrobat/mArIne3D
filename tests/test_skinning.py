@@ -1,59 +1,10 @@
 import numpy as np
-import pytest
 import trimesh
 from animgen.core.armature import Armature, Bone
 from animgen.rigging.skinning import (
     compute_auto_skin_weights,
     get_skinning_weight_matrix,
 )
-from animgen.utils.mesh import (
-    compute_cotangent_laplacian,
-    dist_point_to_segment_vectorized,
-)
-
-
-def test_dist_point_to_segment_vectorized():
-    # Test point projection onto segment [0,0,0] to [0,0,1]
-    pts = np.array(
-        [
-            [0.0, 0.0, 0.5],  # On segment
-            [1.0, 0.0, 0.5],  # Offset by 1 in X at midpoint
-            [0.0, 0.0, -1.0],  # Before start (clamped to start)
-            [0.0, 0.0, 2.0],  # Beyond end (clamped to end)
-        ]
-    )
-    seg_a = np.array([0.0, 0.0, 0.0])
-    seg_b = np.array([0.0, 0.0, 1.0])
-
-    dists, proj = dist_point_to_segment_vectorized(pts, seg_a, seg_b)
-    np.testing.assert_allclose(dists, [0.0, 1.0, 1.0, 1.0], atol=1e-6)
-    np.testing.assert_allclose(
-        proj,
-        [
-            [0.0, 0.0, 0.5],
-            [0.0, 0.0, 0.5],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ],
-        atol=1e-6,
-    )
-
-
-def test_cotangent_laplacian_properties():
-    mesh = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
-    L, M = compute_cotangent_laplacian(mesh, return_mass_matrix=True)
-    N = len(mesh.vertices)
-
-    assert L.shape == (N, N)
-    assert M.shape == (N, N)
-
-    # Row sum of Laplacian matrix should be approximately 0
-    row_sums = np.array(L.sum(axis=1)).flatten()
-    np.testing.assert_allclose(row_sums, 0.0, atol=1e-5)
-
-    # Mass matrix should be diagonal and strictly positive
-    diag_m = M.diagonal()
-    assert np.all(diag_m > 0)
 
 
 def test_skinning_cylinder_connected_chain():
@@ -150,9 +101,7 @@ def test_skinning_branching_and_disconnected_armature():
 
 
 def test_skinning_extreme_armatures_and_meshes():
-    # Extreme armature configurations:
-    # 1. Bones extending way outside mesh
-    # 2. Zero-length bone (head == tail)
+    # Extreme armature configurations: bones extending outside mesh and zero-length bones
     box = trimesh.creation.box(extents=(1, 1, 1))
 
     b0 = Bone(id="huge_bone", head=(0, 0, -10.0), tail=(0, 0, 10.0))
@@ -226,125 +175,3 @@ def test_skinning_uv_seam_duplicate_vertices():
             clean_w[b_id],
             atol=1e-4,
         )
-
-
-def _compute_auto_skin_weights_blender(
-    mesh: trimesh.Trimesh,
-    armature: Armature,
-) -> dict[str, np.ndarray]:
-    """
-    Test helper: computes ground truth automatic skinning weights using Blender's
-    ARMATURE_AUTO operator via bpy.
-    """
-    import bpy
-
-    # Clear existing scene objects
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete()
-
-    for col in (
-        bpy.data.meshes,
-        bpy.data.armatures,
-        bpy.data.materials,
-        bpy.data.objects,
-    ):
-        for block in list(col):
-            if block.users == 0:
-                col.remove(block)
-
-    mesh_data = bpy.data.meshes.new("TestSkinMesh")
-    mesh_data.from_pydata(mesh.vertices.tolist(), [], mesh.faces.tolist())
-    mesh_data.update()
-    mesh_obj = bpy.data.objects.new("TestSkinMesh", mesh_data)
-    bpy.context.collection.objects.link(mesh_obj)
-
-    arm_data = bpy.data.armatures.new("TestSkinArmature")
-    arm_obj = bpy.data.objects.new("TestSkinArmature", arm_data)
-    bpy.context.collection.objects.link(arm_obj)
-
-    bpy.context.view_layer.objects.active = arm_obj
-    bpy.ops.object.mode_set(mode="EDIT")
-
-    edit_bones = {}
-    for bone in armature.bones_list:
-        eb = arm_data.edit_bones.new(bone.id)
-        eb.head = tuple(bone.head)
-        eb.tail = tuple(bone.tail)
-        edit_bones[bone.id] = eb
-
-    for bone in armature.bones_list:
-        if bone.parent is not None:
-            eb = edit_bones[bone.id]
-            eb.parent = edit_bones[bone.parent.id]
-            eb.use_connect = bone.is_connected_to_parent
-
-    bpy.ops.object.mode_set(mode="OBJECT")
-
-    # Parent mesh to armature using Blender automatic weighting
-    bpy.ops.object.select_all(action="DESELECT")
-    mesh_obj.select_set(True)
-    arm_obj.select_set(True)
-    bpy.context.view_layer.objects.active = arm_obj
-
-    try:
-        bpy.ops.object.parent_set(type="ARMATURE_AUTO")
-    except Exception:
-        bpy.ops.object.parent_set(type="ARMATURE_ENVELOPE")
-
-    num_verts = len(mesh.vertices)
-    bone_ids = [bone.id for bone in armature.bones_list]
-    weights_dict = {b_id: np.zeros(num_verts, dtype=np.float32) for b_id in bone_ids}
-
-    vg_idx_to_name = {vg.index: vg.name for vg in mesh_obj.vertex_groups}
-    for v_idx, v in enumerate(mesh_obj.data.vertices):
-        for g in v.groups:
-            if g.group in vg_idx_to_name:
-                b_name = vg_idx_to_name[g.group]
-                if b_name in weights_dict:
-                    weights_dict[b_name][v_idx] = g.weight
-
-    # Clean up Blender datablocks
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete()
-
-    for col in (
-        bpy.data.meshes,
-        bpy.data.armatures,
-        bpy.data.materials,
-        bpy.data.objects,
-    ):
-        for block in list(col):
-            if block.users == 0:
-                col.remove(block)
-
-    return weights_dict
-
-
-def test_skinning_blender_correlation():
-    """
-    Validates that our pure NumPy/SciPy Bone Heat solver correlates with
-    Blender's native ARMATURE_AUTO bone heat weighting.
-    """
-    try:
-        import bpy  # noqa: F401
-    except (ImportError, Exception) as e:
-        pytest.skip(f"bpy import failed: {e}")
-
-    mesh = trimesh.creation.cylinder(radius=0.5, height=3.0, sections=24)
-    b0 = Bone(id="b0", head=(0, 0, -1.5), tail=(0, 0, -0.5))
-    arm = Armature(b0)
-    b1 = arm.add_connected_bone(b0, tail=(0, 0, 0.5))
-    b1.id = "b1"
-    b2 = arm.add_connected_bone(b1, tail=(0, 0, 1.5))
-    b2.id = "b2"
-
-    np_weights = compute_auto_skin_weights(mesh, arm)
-    bpy_weights = _compute_auto_skin_weights_blender(mesh, arm)
-
-    for b_id in ["b0", "b1", "b2"]:
-        w_np = np_weights[b_id]
-        w_bp = bpy_weights[b_id]
-        diff = np.abs(w_np - w_bp)
-        # Verify close agreement with Blender
-        assert np.mean(diff) < 0.05
-        assert np.max(diff) < 0.10

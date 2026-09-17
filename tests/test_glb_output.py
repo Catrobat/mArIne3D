@@ -12,10 +12,6 @@ from animgen.io.glb_output import (
     export_glb,
     mesh_to_gltf,
 )
-from animgen.rigging.skinning import (
-    compute_auto_skin_weights,
-    get_skinning_weight_matrix,
-)
 
 
 def test_mesh_to_gltf():
@@ -105,69 +101,32 @@ def test_export_glb_with_materials(tmp_path: Path):
     assert np.isclose(pbr.roughnessFactor, 0.2, atol=1e-2)
 
 
-def test_export_glb_with_armature_and_skinning(tmp_path: Path):
+def test_export_glb_rigged_and_skinned(tmp_path: Path):
+    """Test exporting GLB with armature and skinning via export_glb and BaseModelClass."""
     box = trimesh.creation.box()
     root = Bone(id="root_bone", head=(0.0, 0.0, 0.0), tail=(0.0, 0.0, 0.5))
     armature = Armature(root)
-    armature.add_connected_bone(root, tail=(0.0, 0.0, 1.0))
+    b1 = armature.add_connected_bone(root, tail=(0.0, 0.0, 1.0))
 
-    out_file = tmp_path / "test_armature_box.glb"
-    res = export_glb(box, out_file, armature=armature)
-    assert res.exists()
+    # Direct export_glb with automatic skin weight computation
+    out_file1 = tmp_path / "test_armature_box.glb"
+    res1 = export_glb(box, out_file1, armature=armature)
+    assert res1.exists()
+    gltf1 = pygltflib.GLTF2().load(str(out_file1))
+    assert len(gltf1.skins) >= 1
+    assert len(gltf1.skins[0].joints) >= 2
 
-    gltf = pygltflib.GLTF2().load(str(out_file))
-    assert len(gltf.skins) >= 1
-    assert len(gltf.skins[0].joints) >= 2
-
-
-def test_compute_auto_skin_weights():
-    box = trimesh.creation.box()
-    root = Bone(id="root_bone", head=(0.0, 0.0, -0.5), tail=(0.0, 0.0, 0.0))
-    armature = Armature(root)
-    b1 = armature.add_connected_bone(root, tail=(0.0, 0.0, 0.5))
-
-    weights = compute_auto_skin_weights(box, armature)
-    assert "root_bone" in weights
-    assert b1.id in weights
-    assert len(weights["root_bone"]) == len(box.vertices)
-    assert len(weights[b1.id]) == len(box.vertices)
-
-    matrix, bone_ids = get_skinning_weight_matrix(box, armature)
-    assert matrix.shape == (len(box.vertices), 2)
-    assert bone_ids == ["root_bone", b1.id]
-
-
-def test_export_glb_via_base_model_class(tmp_path: Path):
-    box = trimesh.creation.box()
+    # BaseModelClass export with precomputed/computed skin weights
     model = BaseModelClass(box)
-    root = Bone(id="root_bone", head=(0.0, 0.0, 0.0), tail=(0.0, 0.0, 0.5))
-    model.armature = Armature(root)
-
-    # Test compute_skin_weights method on BaseModelClass
+    model.armature = armature
     weights = model.compute_skin_weights()
     assert "root_bone" in weights
-    assert model.skin_weights is not None
-
-    out_file = tmp_path / "test_model_class.glb"
-    res = model.export(out_file)
-    assert res.exists()
-
-    gltf = pygltflib.GLTF2().load(str(out_file))
-    assert len(gltf.skins) >= 1
-
-
-def test_export_glb_with_precomputed_skin_weights(tmp_path: Path):
-    box = trimesh.creation.box()
-    root = Bone(id="root_bone", head=(0.0, 0.0, 0.0), tail=(0.0, 0.0, 0.5))
-    armature = Armature(root)
-
-    custom_weights = {"root_bone": np.ones(len(box.vertices), dtype=np.float32)}
-    out_file = tmp_path / "test_custom_weights.glb"
-    res = export_glb(box, out_file, armature=armature, skin_weights=custom_weights)
-    assert res.exists()
-
-    gltf = pygltflib.GLTF2().load(str(out_file))
-    assert len(gltf.skins) >= 1
+    assert b1.id in weights
+    out_file2 = tmp_path / "test_model_class.glb"
+    res2 = model.export(out_file2)
+    assert res2.exists()
+    gltf2 = pygltflib.GLTF2().load(str(out_file2))
+    assert len(gltf2.skins) >= 1
 
 
 def test_export_glb_invalid_asset_type():

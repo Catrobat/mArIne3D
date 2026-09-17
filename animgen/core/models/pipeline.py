@@ -1,3 +1,4 @@
+from typing import Any
 import trimesh
 from pathlib import Path
 import copy
@@ -95,7 +96,12 @@ class Pipeline(ABC):
 
         return self.model
 
-    def export(self, output_path: str | Path) -> Path:
+    def export(
+        self,
+        output_path: str | Path,
+        animation: Any = ...,
+        **kwargs: Any,
+    ) -> Path:
         """
         Exports the pipeline's underlying model (mesh, armature, skin weights, and animation)
         to a GLB file by delegating directly to self.model.export().
@@ -104,6 +110,10 @@ class Pipeline(ABC):
         ----------
         output_path : str | Path
             Destination file path for the exported GLB.
+        animation : Any, optional
+            Animation track/clip/animator to export. If omitted, uses the model's animator.
+        **kwargs : Any
+            Additional keyword arguments forwarded to BaseModelClass.export().
 
         Returns
         -------
@@ -112,4 +122,6 @@ class Pipeline(ABC):
         """
         return self.model.export(
             output_path=output_path,
+            animation=animation,
+            **kwargs,
         )
