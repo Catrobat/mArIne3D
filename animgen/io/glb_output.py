@@ -14,7 +14,7 @@ import trimesh
 
 from animgen.core.armature import Armature
 from animgen.rigging.skinning import compute_auto_skin_weights
-from animgen.animation.animator import AnimationClip
+from animgen.animation.animator import AnimationClip, Animator
 from animgen.core.types import Animation
 from animgen.utils.math import rotation_matrix_to_quaternion
 
@@ -28,7 +28,8 @@ def _append_binary_buffer(
     Appends raw binary data to the glTF binary blob with 4-byte alignment,
     creates a BufferView, and returns its index.
     """
-    bin_data = bytearray(gltf.binary_blob())
+    blob = gltf.binary_blob()
+    bin_data = bytearray(blob) if blob is not None else bytearray()
     offset = len(bin_data)
     if offset % 4 != 0:
         bin_data.extend(b"\x00" * (4 - (offset % 4)))
@@ -36,6 +37,8 @@ def _append_binary_buffer(
     bin_data.extend(data)
     gltf.set_binary_blob(bytes(bin_data))
 
+    if gltf.bufferViews is None:
+        gltf.bufferViews = []
     bv_idx = len(gltf.bufferViews)
     gltf.bufferViews.append(
         pygltflib.BufferView(
@@ -60,6 +63,8 @@ def _append_accessor(
     """
     Appends an Accessor to the glTF structure and returns its index.
     """
+    if gltf.accessors is None:
+        gltf.accessors = []
     acc_idx = len(gltf.accessors)
     gltf.accessors.append(
         pygltflib.Accessor(
@@ -356,7 +361,7 @@ def add_armature_and_skin(
 
 def add_animation(
     gltf: pygltflib.GLTF2,
-    animation: Union[AnimationClip, Animation, dict[float, Any]],
+    animation: Union[AnimationClip, Animation, dict[float, Any], Any],
     bone_to_node_idx: dict[str, int],
     clip_name: str = "Animation",
     armature: Optional[Armature] = None,
@@ -468,6 +473,8 @@ def add_animation(
     gltf_anim = pygltflib.Animation(
         name=clip_name, channels=channels, samplers=samplers
     )
+    if gltf.animations is None:
+        gltf.animations = []
     gltf.animations.append(gltf_anim)
     return gltf
 
@@ -478,7 +485,14 @@ def export_glb(
     armature: Optional[Armature] = None,
     skin_weights: Optional[dict[str, np.ndarray]] = None,
     animation: Optional[
-        Union[list[AnimationClip], AnimationClip, Animation, dict[float, Any]]
+        Union[
+            Animator,
+            list[AnimationClip],
+            AnimationClip,
+            Animation,
+            dict[float, Any],
+            Any,
+        ]
     ] = None,
 ) -> Path:
     """

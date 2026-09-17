@@ -1,10 +1,12 @@
 from pathlib import Path
-from typing import cast
-
+from typing import Any, cast
 import trimesh
 
 
-def load_model(mesh: str | Path | trimesh.Geometry) -> trimesh.Trimesh:
+def load_model(mesh: str | Path | trimesh.Geometry | Any) -> trimesh.Trimesh:
+    if hasattr(mesh, "mesh"):
+        mesh = getattr(mesh, "mesh")
+
     if isinstance(mesh, (Path, str)):
         mesh = trimesh.load(mesh)
 

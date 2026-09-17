@@ -45,7 +45,7 @@ from PIL import Image
 from pyrender.shader_program import ShaderProgramCache as DefaultShaderCache
 import trimesh
 from tqdm import tqdm
-from typing import Any
+from typing import Any, Optional
 
 from animgen.io.model_input import load_model
 from animgen.utils.camera import sample_view_matrices, sample_view_matrices_polyhedra
@@ -161,6 +161,7 @@ class Renderer:
             self.renderer._renderer._program_cache = self.shaders[shader]
             return self.renderer.render(scene)
 
+        raw_color: Optional[np.ndarray] = None
         if return_colored:
             raw_color, raw_depth = render_shader("default", self.scene)
         raw_norms, raw_depth = render_shader("normals", self.scene)
@@ -289,15 +290,37 @@ def render_multiview(
     """
     lookat_position_torch = torch.from_numpy(lookat_position)
 
+    if sampling_args is None:
+        if camera_generation_method == "random_sphere":
+            sampling_args_dict = {"n": 12, "radius": 1.8}
+        else:
+            sampling_args_dict = {"radius": 1.8}
+    else:
+        sampling_args_dict = sampling_args.copy()
+        if camera_generation_method == "random_sphere":
+            sampling_args_dict.setdefault("n", 12)
+            sampling_args_dict.setdefault("radius", 1.8)
+        else:
+            sampling_args_dict.setdefault("radius", 1.8)
+
+    renderer_args_dict = renderer_args.copy() if renderer_args is not None else {}
+
     if camera_generation_method == "random_sphere":
+        n_val = int(sampling_args_dict.pop("n", 12))
+        radius_val = float(sampling_args_dict.pop("radius", 1.8))
         views = sample_view_matrices(
-            lookat_position=lookat_position_torch, **sampling_args
+            n=n_val,
+            radius=radius_val,
+            lookat_position=lookat_position_torch,
+            **sampling_args_dict,
         ).numpy()
     else:
+        radius_val = float(sampling_args_dict.pop("radius", 1.8))
         views = sample_view_matrices_polyhedra(
             camera_generation_method,
+            radius=radius_val,
             lookat_position=lookat_position_torch,
-            **sampling_args,
+            **sampling_args_dict,
         ).numpy()
 
     def compute_lightdir(pose: PoseTransformTensor):
@@ -310,9 +333,12 @@ def render_multiview(
         views = tqdm(views, "Rendering Multiviews...")
     for pose in views:
         outputs = renderer.render(
-            pose, lightdir=compute_lightdir(pose), **renderer_args
+            pose, lightdir=compute_lightdir(pose), **renderer_args_dict
         )
         outputs["matte"] = Image.fromarray(outputs["matte"])
         outputs["poses"] = pose
         renders.append(outputs)
+
+    if not renders:
+        return {}
     return {name: [render[name] for render in renders] for name in renders[0].keys()}

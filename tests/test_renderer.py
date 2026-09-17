@@ -37,3 +37,21 @@ def test_renderer_multiview():
         )
         assert img_arr.shape[:2] == (128, 128)
         assert float(np.std(img_arr)) > 1.0, f"View {idx} lacks contrast"
+    renderer.delete()
+
+
+def test_renderer_multiview_default_arguments():
+    """
+    Test that render_multiview runs without errors when called with default
+    renderer_args and sampling_args.
+    """
+    mesh = trimesh.creation.cylinder(radius=1.0, height=4.0, sections=16)
+    renderer = Renderer(viewport_width=64, viewport_height=64)
+    renderer.set_object(mesh)
+    renderer.set_camera()
+
+    results = render_multiview(renderer, verbose=False)
+    assert isinstance(results, dict)
+    assert "poses" in results
+    assert len(results["poses"]) == 12
+    renderer.delete()
