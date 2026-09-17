@@ -97,7 +97,7 @@ def deform_mesh_to_spine_numpy(
     Deform a mesh using Bishop frame coordinate projection in pure NumPy.
     This method is geometrically exact and volume-preserving.
     """
-    # 1. Build Bishop parallel transport frames along both spines
+    # Build Bishop parallel transport frames along both spines
     T_src, N_src, B_src, _, _ = build_bishop_frame(source_spine)
     T_tgt, N_tgt, B_tgt, _, _ = build_bishop_frame(target_spine)
 
@@ -113,7 +113,7 @@ def deform_mesh_to_spine_numpy(
     V_new = np.zeros_like(mesh.vertices)
     num_vertices = len(mesh.vertices)
 
-    # 2. Map coordinates chunk by chunk to limit memory footprints
+    # Map coordinates chunk by chunk to limit memory footprints
     for start_idx in range(0, num_vertices, chunk_size):
         end_idx = min(start_idx + chunk_size, num_vertices)
         V_chunk = mesh.vertices[start_idx:end_idx]
@@ -192,37 +192,14 @@ def deform_mesh_to_spine(
     return deform_mesh_to_spine_numpy(mesh, source_spine, target_spine, chunk_size)
 
 
-def straighten(
-    mesh: trimesh.Trimesh,
+def resolve_spine_points(
     spine_points: Union[np.ndarray, torch.Tensor, List[Any], Spline],
-    num_segments: int | None = None,
-    axis: str = "z",
-) -> trimesh.Trimesh:
+    num_segments: int = 100,
+) -> np.ndarray:
     """
-    Straighten a curved mesh by mapping its vertices from the local coordinate frames of a curved
-    spine (skeleton path) to a straight line along a specified axis.
-
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        The input curved mesh.
-    spine_points : array-like or Spline
-        The control points or evaluated points representing the curved spine.
-        - If a Spline object, it is evaluated.
-    num_segments : int or None
-        The number of interpolation points to use along the spine.
-    axis : str
-        The axis along which to straighten the mesh ('x', 'y', or 'z').
-
-    Returns
-    -------
-    straightened_mesh : trimesh.Trimesh
-        A new mesh representing the straightened geometry.
+    Resolve spine points from various formats (Spline, Tensor, ndarray, or list of points)
+    to a standardized NumPy array of shape (N, 3).
     """
-    if num_segments is None:
-        num_segments = 100
-
-    # 1. Resolve spine points to a numpy array of shape (N, 3)
     if isinstance(spine_points, Spline):
         eval_pts = spine_points.evaluate_curve(
             num_points_per_segment=max(5, num_segments // len(spine_points.points) + 1)
@@ -245,6 +222,37 @@ def straighten(
         raise ValueError(
             f"Spine points must have shape (N, 3), got {spine_pts_np.shape}"
         )
+    return spine_pts_np
+
+
+def straighten(
+    mesh: trimesh.Trimesh,
+    spine_points: Union[np.ndarray, torch.Tensor, List[Any], Spline],
+    num_segments: int | None = None,
+    axis: str = "z",
+) -> trimesh.Trimesh:
+    """
+    Straighten a curved mesh along a specified axis using Bishop frame deformation.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The input curved mesh.
+    spine_points : array-like or Spline
+        The control points or evaluated points representing the curved spine.
+        - If a Spline object, it is evaluated to generate num_segments points.
+        - If an array, it is used directly (or interpolated if necessary).
+    num_segments : int or None
+        The number of interpolation points to use along the spine.
+    axis : str
+        The axis along which to straighten the mesh ('x', 'y', or 'z').
+
+    Returns
+    -------
+    straightened_mesh : trimesh.Trimesh
+        A new mesh representing the straightened geometry.
+    """
+    spine_pts_np = resolve_spine_points(spine_points, num_segments or 100)
 
     # Calculate cumulative arc lengths to define the target straight spine
     _, _, _, _, s = build_bishop_frame(spine_pts_np)
@@ -289,32 +297,7 @@ def straighten_lateral(
     straightened_mesh : trimesh.Trimesh
         A new mesh with the lateral curvature removed.
     """
-    if num_segments is None:
-        num_segments = 100
-
-    # 1. Resolve spine points to a numpy array of shape (N, 3)
-    if isinstance(spine_points, Spline):
-        eval_pts = spine_points.evaluate_curve(
-            num_points_per_segment=max(5, num_segments // len(spine_points.points) + 1)
-        )
-        spine_pts_np = np.array([pt.detach().cpu().numpy() for pt in eval_pts])
-    elif isinstance(spine_points, torch.Tensor):
-        spine_pts_np = spine_points.detach().cpu().numpy()
-    elif isinstance(spine_points, np.ndarray):
-        spine_pts_np = spine_points
-    else:
-        resolved = []
-        for pt in spine_points:
-            if isinstance(pt, torch.Tensor):
-                resolved.append(pt.detach().cpu().numpy())
-            else:
-                resolved.append(np.array(pt))
-        spine_pts_np = np.stack(resolved, axis=0)
-
-    if spine_pts_np.ndim != 2 or spine_pts_np.shape[1] != 3:
-        raise ValueError(
-            f"Spine points must have shape (N, 3), got {spine_pts_np.shape}"
-        )
+    spine_pts_np = resolve_spine_points(spine_points, num_segments or 100)
 
     # Create target spine by setting the specified axis to its initial value
     target_spine = spine_pts_np.copy()

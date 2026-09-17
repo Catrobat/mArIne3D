@@ -127,7 +127,7 @@ def visualize_skeleton_over_mesh(
     if not isinstance(mesh, trimesh.Trimesh):
         mesh = load_model(mesh)
 
-    # 1. Low-opacity copy of original mesh for clear viewing
+    # Low-opacity copy of original mesh for clear viewing
     vis_mesh = mesh.copy()
     alpha_int = int(np.clip(opacity, 0.0, 1.0) * 255)
 

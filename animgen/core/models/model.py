@@ -9,6 +9,7 @@ from animgen.animation.animator import Animator
 from animgen.io.model_input import load_model
 from animgen.io.glb_output import export_glb
 from animgen.rigging.skinning import compute_auto_skin_weights
+from animgen.utils.mesh import center_mesh
 
 
 class BaseModelClass:
@@ -70,9 +71,7 @@ class BaseModelClass:
         Centers and normalizes coordinates within a unit bounding sphere,
         preserving original vertex count, UV maps, and visual attributes.
         """
-        mesh = mesh.copy()
-        center = mesh.vertices.mean(axis=0)
-        mesh.vertices -= center
+        mesh = center_mesh(mesh)
         scale = float(np.max(np.linalg.norm(mesh.vertices, axis=1)))
         if scale > 1e-8:
             mesh.vertices /= scale

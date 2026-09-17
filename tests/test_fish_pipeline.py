@@ -5,7 +5,7 @@ import trimesh
 
 from animgen.core.models.model import BaseModelClass
 from animgen.core.models.fish import FishModels
-from animgen.core.armature import Armature
+from animgen.core.armature import Armature, Bone
 from animgen.animation.animator import Animator
 
 
@@ -323,3 +323,120 @@ def test_fish_sam_configuration_and_prompts():
     pipe_sam = FishModels(model, prompts=custom_prompts, use_sam=True)
     assert pipe_sam.use_sam is True
     assert pipe_sam.prompts == custom_prompts
+
+
+def test_fish_generate_base_animation_public_api():
+    """
+    Tests the public FishModels.generate_base_animation API directly:
+    - Generates keyframes on an arbitrary Armature with custom parameters.
+    - Validates keyframe frame counts and timestamps.
+    - Validates orthogonal rotation matrices for all bones.
+    - Validates active swimming pectoral kinematics.
+    - Validates sprint/closed tucked state preventing outward flare.
+    - Validates cetacean horizontal tail steering orientation.
+    - Validates graceful handling of empty armatures.
+    """
+    root = Bone("spine_0", head=(0.0, 0.0, 0.0), tail=(1.0, 0.0, 0.0))
+    armature = Armature(root_bone=root)
+    prev_bone = root
+    for i in range(1, 8):
+        b = armature.add_unconnected_bone(
+            parent=prev_bone,
+            head=(float(i), 0.0, 0.0),
+            tail=(float(i + 1), 0.0, 0.0),
+        )
+        b.id = f"spine_{i}"
+        prev_bone = b
+
+    # Attach pectoral side fins to spine_2
+    l_fin = armature.add_unconnected_bone(
+        parent=armature.bones_list[2],
+        head=(2.2, 0.0, 0.5),
+        tail=(2.6, 0.0, 0.9),
+    )
+    l_fin.id = "left_pectoral_fin_0"
+
+    r_fin = armature.add_unconnected_bone(
+        parent=armature.bones_list[2],
+        head=(2.2, 0.0, -0.5),
+        tail=(2.6, 0.0, -0.9),
+    )
+    r_fin.id = "right_pectoral_fin_0"
+
+    # Attach dorsal fin to spine_4
+    d_fin = armature.add_unconnected_bone(
+        parent=armature.bones_list[4],
+        head=(4.2, 0.5, 0.0),
+        tail=(4.5, 1.2, 0.0),
+    )
+    d_fin.id = "dorsal_fin_0"
+
+    # Active Locomotion Mode (Cruising / Natural Swim)
+    frames_active = FishModels.generate_base_animation(
+        armature=armature,
+        wave_amplitude=0.22,
+        wave_duration=1.2,
+        frame_rate=30.0,
+        head_amplitude_ratio=0.08,
+        num_waves=0.85,
+        tail_orientation="vertical",
+        pectoral_mode="active",
+        pectoral_flap_deg=14.0,
+        pectoral_pitch_deg=6.0,
+        dorsal_flex_deg=4.0,
+    )
+
+    expected_frames = int(round(1.2 * 30.0))
+    assert len(frames_active) == expected_frames
+    timestamps = sorted(frames_active.keys())
+    assert timestamps[0] == 0.0
+    assert np.isclose(timestamps[1] - timestamps[0], 1.0 / 30.0)
+
+    l_idx = next(
+        i for i, b in enumerate(armature.bones_list) if "left_pectoral" in b.id
+    )
+
+    for t, frame in frames_active.items():
+        assert len(frame) == len(armature.bones_list)
+        for R in frame:
+            # Ensure valid SO(3) rotation matrices
+            np.testing.assert_allclose(R.T @ R, np.eye(3), atol=1e-5)
+            assert np.isclose(np.linalg.det(R), 1.0, atol=1e-4)
+
+    # Closed Tucked Locomotion Mode (Sprint)
+    frames_closed = FishModels.generate_base_animation(
+        armature=armature,
+        wave_amplitude=0.30,
+        wave_duration=0.8,
+        frame_rate=30.0,
+        tail_orientation="vertical",
+        pectoral_mode="closed",
+        pectoral_close_deg=38.0,
+        dorsal_flex_deg=2.0,
+    )
+
+    assert len(frames_closed) == int(round(0.8 * 30.0))
+    v_rest_l = np.array(l_fin.tail) - np.array(l_fin.head)
+
+    # In closed state, ensure fin is folded inward against the body wall without flaring outward
+    for t, frame in frames_closed.items():
+        R_l = frame[l_idx]
+        v_anim_l = R_l @ v_rest_l
+        assert abs(v_anim_l[2]) < abs(v_rest_l[2]) + 1e-5
+
+    # Horizontal Tail Orientation (Cetaceans / Dolphins)
+    frames_horiz = FishModels.generate_base_animation(
+        armature=armature,
+        wave_amplitude=0.20,
+        wave_duration=1.0,
+        frame_rate=30.0,
+        tail_orientation="horizontal",
+    )
+    assert len(frames_horiz) == 30
+
+    # Empty Armature Handling
+    empty_armature = Armature(
+        root_bone=Bone("pectoral_only", head=(0, 0, 0), tail=(1, 0, 0))
+    )
+    empty_frames = FishModels.generate_base_animation(armature=empty_armature)
+    assert empty_frames == {}

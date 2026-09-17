@@ -37,6 +37,82 @@ def _check_armature_chain(armature: Armature, index_bones: list[int]) -> bool:
     return True
 
 
+def _compute_wave_grid(
+    distances: NDArray[np.float64] | list[float],
+    time_stamps: float | list[float] | NDArray[np.float64],
+    num_waves: float,
+    wave_duration: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """
+    Computes extended ceil distances, wave number k, and angular frequency omega
+    for procedural wave animations.
+    """
+    d_arr = np.asarray(distances, dtype=np.float64)
+    t_arr = np.asarray(time_stamps, dtype=np.float64)
+
+    total_length = d_arr[-1]
+    num_bones = len(d_arr) - 1
+    bone_length = total_length / num_bones
+
+    if num_waves <= 0.0:
+        ceil_num_bones = num_bones
+    else:
+        ceil_waves = float(np.ceil(num_waves))
+        ceil_length_target = total_length * (ceil_waves / num_waves)
+        ceil_num_bones = int(np.ceil(ceil_length_target / bone_length))
+
+    ceil_distances = np.arange(ceil_num_bones + 1) * bone_length
+    wave_number = 2 * np.pi * num_waves / total_length
+    angular_frequency = 2 * np.pi / wave_duration
+
+    return d_arr, t_arr, ceil_distances, wave_number, angular_frequency
+
+
+def _integrate_tangents_to_rotations(
+    distances: np.ndarray,
+    time_stamps: np.ndarray,
+    tangent: np.ndarray,
+    ceil_distances: np.ndarray,
+) -> Animation:
+    """
+    Integrates spatial tangent vectors into 3D bone positions, applies mean-Y centering
+    for spatial equilibrium, truncates to target armature length, and converts into
+    successive local rotation matrices via inverse kinematics.
+    """
+    if time_stamps.ndim == 0 and tangent.ndim == 2:
+        tangent = tangent[None, ...]
+
+    bind_positions = np.stack(
+        (distances, np.zeros_like(distances), np.zeros_like(distances)),
+        axis=-1,
+    )
+
+    animation: Animation = {}
+    seg_lens = np.diff(ceil_distances)
+
+    for time, frame_tangent in zip(np.atleast_1d(time_stamps), tangent):
+        frame = [(0.0, 0.0, 0.0)]
+        for index in range(1, len(ceil_distances)):
+            seg_length = seg_lens[index - 1]
+            previous_position = np.asarray(frame[-1], dtype=np.float64)
+            direction = frame_tangent[index - 1]
+            position = previous_position + seg_length * direction
+            frame.append(tuple(position.tolist()))
+
+        y_coords = np.array([p[1] for p in frame])
+        mean_y_ceil = float(np.mean(y_coords))
+        shifted_frame = [(p[0], p[1] - mean_y_ceil, p[2]) for p in frame]
+        truncated_frame = np.array(shifted_frame[: len(distances)])
+
+        animation[float(time)] = successive_rotations(
+            bind_positions,
+            truncated_frame,
+            is_positions=True,
+        )
+
+    return animation
+
+
 def _travelling_wave_generator(
     distances: list[float] | NDArray[np.float64],
     wave_amplitude: float,
@@ -117,45 +193,22 @@ def _travelling_wave_generator(
         representing local bone rotations that deform the armature chain from its bind pose
         to the wave shape.
     """
-
-    distances = np.asarray(distances, dtype=np.float64)
-    time_stamps = np.asarray(time_stamps, dtype=np.float64)
-
-    total_length = distances[-1]
-    num_bones = len(distances) - 1
-
-    bone_length = total_length / num_bones
-
-    if num_waves <= 0.0:
-        ceil_waves = 1.0
-        ceil_length_target = total_length
-        ceil_num_bones = num_bones
-    else:
-        ceil_waves = float(np.ceil(num_waves))
-        ceil_length_target = total_length * (ceil_waves / num_waves)
-        ceil_num_bones = int(np.ceil(ceil_length_target / bone_length))
-
-    # Extend distances by appending segments of the same bone_length
-    ceil_distances = np.arange(ceil_num_bones + 1) * bone_length
-
-    wave_number = 2 * np.pi * num_waves / total_length
-    angular_frequency = 2 * np.pi / wave_duration
+    d_arr, t_arr, ceil_distances, wave_number, angular_frequency = _compute_wave_grid(
+        distances, time_stamps, num_waves, wave_duration
+    )
 
     spatial_amplitude = wave_amplitude * np.exp(growth_factor * ceil_distances)
-
     phase = (
         wave_number * ceil_distances
-        - angular_frequency * time_stamps[..., None]
+        - angular_frequency * t_arr[..., None]
         + phi_s
         + phi_t
     )
 
-    # Spatial derivative of the wave.
     spatial_derivative = spatial_amplitude * (
         growth_factor * np.sin(phase) + wave_number * np.cos(phase)
     )
 
-    # Tangent of the desired curve.
     tangent = np.stack(
         (
             np.ones_like(spatial_derivative),
@@ -164,61 +217,9 @@ def _travelling_wave_generator(
         ),
         axis=-1,
     )
+    tangent /= np.linalg.norm(tangent, axis=-1, keepdims=True)
 
-    tangent /= np.linalg.norm(
-        tangent,
-        axis=-1,
-        keepdims=True,
-    )
-
-    if time_stamps.ndim == 0:
-        tangent = tangent[None, ...]
-
-    animation: Animation = {}
-
-    bind_positions = np.stack(
-        (
-            distances,
-            np.zeros_like(distances),
-            np.zeros_like(distances),
-        ),
-        axis=-1,
-    )
-
-    for time, frame_tangent in zip(
-        np.atleast_1d(time_stamps),
-        tangent,
-    ):
-        frame = [
-            (0.0, 0.0, 0.0),
-        ]
-
-        for index in range(1, len(ceil_distances)):
-            seg_length = ceil_distances[index] - ceil_distances[index - 1]
-
-            previous_position = np.asarray(
-                frame[-1],
-                dtype=np.float64,
-            )
-
-            direction = frame_tangent[index - 1]
-
-            position = previous_position + seg_length * direction
-
-            frame.append(tuple(position.tolist()))
-
-        y_coords = np.array([p[1] for p in frame])
-        mean_y_ceil = np.mean(y_coords)
-        shifted_frame = [(p[0], p[1] - mean_y_ceil, p[2]) for p in frame]
-        truncated_frame = shifted_frame[: len(distances)]
-
-        animation[float(time)] = successive_rotations(
-            bind_positions,
-            np.array(truncated_frame),
-            is_positions=True,
-        )
-
-    return animation
+    return _integrate_tangents_to_rotations(d_arr, t_arr, tangent, ceil_distances)
 
 
 def _standing_wave_generator(
@@ -237,7 +238,8 @@ def _standing_wave_generator(
     The standing wave is modeled as:
 
         u(s, t) = 2 A exp(g s)
-                sin(k s + phi_s) sin(omega t + phi_t)
+                sin(k s + phi_s)
+                sin(omega t + phi_t)
 
     where the spatial wave number ``k`` and temporal angular frequency
     ``omega`` are defined as:
@@ -276,7 +278,7 @@ def _standing_wave_generator(
 
         The amplitude at distance ``s`` is:
 
-            A(s) = 2 * A * exp(g * s)
+            A(s) = A * exp(g * s)
 
         Positive values increase the amplitude with distance, zero
         produces a constant amplitude, and negative values produce
@@ -301,39 +303,17 @@ def _standing_wave_generator(
         representing local bone rotations that deform the armature chain from its bind pose
         to the wave shape.
     """
-    distances = np.asarray(distances, dtype=np.float64)
-    time_stamps = np.asarray(time_stamps, dtype=np.float64)
-
-    total_length = distances[-1]
-    num_bones = len(distances) - 1
-
-    bone_length = total_length / num_bones
-
-    if num_waves <= 0.0:
-        ceil_waves = 1.0
-        ceil_length_target = total_length
-        ceil_num_bones = num_bones
-    else:
-        ceil_waves = float(np.ceil(num_waves))
-        ceil_length_target = total_length * (ceil_waves / num_waves)
-        ceil_num_bones = int(np.ceil(ceil_length_target / bone_length))
-
-    # Extend distances by appending segments of the same bone_length
-    ceil_distances = np.arange(ceil_num_bones + 1) * bone_length
-
-    wave_number = 2 * np.pi * num_waves / total_length
-    angular_frequency = 2 * np.pi / wave_duration
+    d_arr, t_arr, ceil_distances, wave_number, angular_frequency = _compute_wave_grid(
+        distances, time_stamps, num_waves, wave_duration
+    )
 
     spatial_amplitude = 2 * wave_amplitude * np.exp(growth_factor * ceil_distances)
-
     cos_part = np.cos(wave_number * ceil_distances + phi_s)
     sin_part = np.sin(wave_number * ceil_distances + phi_s)
-
     spatial_deriv = growth_factor * sin_part + wave_number * cos_part
 
-    t_arr = np.atleast_1d(time_stamps)
-    temporal_part = np.sin(angular_frequency * t_arr[..., None] + phi_t)
-
+    t_1d = np.atleast_1d(t_arr)
+    temporal_part = np.sin(angular_frequency * t_1d[..., None] + phi_t)
     spatial_combined = spatial_amplitude * spatial_deriv
     derivative = temporal_part * spatial_combined[None, :]
 
@@ -345,58 +325,9 @@ def _standing_wave_generator(
         ),
         axis=-1,
     )
+    tangent /= np.linalg.norm(tangent, axis=-1, keepdims=True)
 
-    tangent /= np.linalg.norm(
-        tangent,
-        axis=-1,
-        keepdims=True,
-    )
-
-    animation: Animation = {}
-
-    bind_positions = np.stack(
-        (
-            distances,
-            np.zeros_like(distances),
-            np.zeros_like(distances),
-        ),
-        axis=-1,
-    )
-
-    for time, frame_tangent in zip(
-        np.atleast_1d(time_stamps),
-        tangent,
-    ):
-        frame = [
-            (0.0, 0.0, 0.0),
-        ]
-
-        for index in range(1, len(ceil_distances)):
-            seg_length = ceil_distances[index] - ceil_distances[index - 1]
-
-            previous_position = np.asarray(
-                frame[-1],
-                dtype=np.float64,
-            )
-
-            direction = frame_tangent[index - 1]
-
-            position = previous_position + seg_length * direction
-
-            frame.append(tuple(position.tolist()))
-
-        y_coords = np.array([p[1] for p in frame])
-        mean_y_ceil = np.mean(y_coords)
-        shifted_frame = [(p[0], p[1] - mean_y_ceil, p[2]) for p in frame]
-        truncated_frame = shifted_frame[: len(distances)]
-
-        animation[float(time)] = successive_rotations(
-            bind_positions,
-            np.array(truncated_frame),
-            is_positions=True,
-        )
-
-    return animation
+    return _integrate_tangents_to_rotations(d_arr, t_arr, tangent, ceil_distances)
 
 
 def _pulse_wave_generator(
@@ -412,93 +343,56 @@ def _pulse_wave_generator(
     pulse_center: float = 0.0,
 ) -> Animation:
     """
-    Generate a wave-pulse animation from spatial distances and timestamps.
+    Generate a pulse-wave (wave packet) animation from spatial distances and timestamps.
 
-    The pulse wave is modeled as a localized Gaussian wave packet starting at ``pulse_center``:
+    The pulse wave is modeled as a travelling sinusoidal carrier modulated by a Gaussian envelope:
 
-        u(s, t) = A exp(g s) exp( - (k (s - s_0) - omega t + phi_s + phi_t)^2 / (2 sigma^2) )
-                cos(k (s - s_0) - omega t + phi_s + phi_t)
+        u(s, t) = A exp(g s) * exp(-0.5 * (phase / sigma)^2) * cos(phase)
 
-    where the spatial wave number ``k`` and temporal angular frequency
-    ``omega`` are defined as:
+    where the carrier phase is defined as:
 
-        k = 2 pi N / L
-        omega = 2 pi / T
+        phase = k * (s - s_0) - omega * t + phi_s + phi_t
 
-    Here, ``N`` is the number of spatial waves, ``L`` is the total
-    spatial length, ``T`` is the temporal period of the wave, ``sigma``
-    is ``pulse_width``, and ``s_0`` is ``pulse_center`` (default=0.0).
+    with ``sigma = pulse_width`` controlling the spatial width of the pulse packet and
+    ``s_0 = pulse_center`` defining its spatial center at t=0.
 
     Parameters
     ----------
     distances : list[float] | NDArray[np.float64]
         Cumulative spatial distances ``s`` at which to evaluate the wave.
-        The distances are measured from the root of the armature and define
-        the x-coordinate of each point in the generated chain.
-
     wave_amplitude : float
-        Base amplitude ``A`` of the wave at ``s = 0``.
-
+        Peak amplitude ``A`` of the wave at the pulse center.
     wave_duration : float
         Temporal period ``T`` of the wave in seconds.
-
     time_stamps : float | list[float] | NDArray[np.float64]
-        Timestamp or timestamps ``t`` at which to evaluate the wave,
-        in seconds.
-
+        Timestamp or timestamps ``t`` at which to evaluate the wave, in seconds.
     growth_factor : float, default=0.0
         Exponential spatial growth rate ``g`` of the wave amplitude.
-
     num_waves : float, default=2.6
-        Number of complete spatial wavelengths across the total spatial
-        length ``L``.
-
+        Carrier spatial wavenumber parameter.
     phi_s : float, default=0.0
         Spatial phase offset in radians.
-
     phi_t : float, default=0.0
         Temporal phase offset in radians.
-
     pulse_width : float, default=1.0
-        Spatial width parameter ``sigma`` of the Gaussian pulse envelope.
-
+        Standard deviation ``sigma`` of the Gaussian envelope in spatial units.
     pulse_center : float, default=0.0
-        Initial spatial location ``s_0`` of the pulse peak at t = 0.
+        Spatial center position ``s_0`` of the pulse at t=0.
 
     Returns
     -------
     Animation
         Mapping from timestamps to animation frames containing local bone rotations.
     """
-    distances = np.asarray(distances, dtype=np.float64)
-    time_stamps = np.asarray(time_stamps, dtype=np.float64)
-
-    total_length = distances[-1]
-    num_bones = len(distances) - 1
-
-    bone_length = total_length / num_bones
-
-    if num_waves <= 0.0:
-        ceil_waves = 1.0
-        ceil_length_target = total_length
-        ceil_num_bones = num_bones
-    else:
-        ceil_waves = float(np.ceil(num_waves))
-        ceil_length_target = total_length * (ceil_waves / num_waves)
-        ceil_num_bones = int(np.ceil(ceil_length_target / bone_length))
-
-    # Extend distances by appending segments of the same bone_length
-    ceil_distances = np.arange(ceil_num_bones + 1) * bone_length
-
-    wave_number = 2 * np.pi * num_waves / total_length
-    angular_frequency = 2 * np.pi / wave_duration
+    d_arr, t_arr, ceil_distances, wave_number, angular_frequency = _compute_wave_grid(
+        distances, time_stamps, num_waves, wave_duration
+    )
+    t_1d = np.atleast_1d(t_arr)
 
     spatial_amplitude = wave_amplitude * np.exp(growth_factor * ceil_distances)
-
-    t_arr = np.atleast_1d(time_stamps)
     phase = (
         wave_number * (ceil_distances[None, :] - pulse_center)
-        - angular_frequency * t_arr[:, None]
+        - angular_frequency * t_1d[:, None]
         + phi_s
         + phi_t
     )
@@ -523,58 +417,9 @@ def _pulse_wave_generator(
         ),
         axis=-1,
     )
+    tangent /= np.linalg.norm(tangent, axis=-1, keepdims=True)
 
-    tangent /= np.linalg.norm(
-        tangent,
-        axis=-1,
-        keepdims=True,
-    )
-
-    animation: Animation = {}
-
-    bind_positions = np.stack(
-        (
-            distances,
-            np.zeros_like(distances),
-            np.zeros_like(distances),
-        ),
-        axis=-1,
-    )
-
-    for time, frame_tangent in zip(
-        t_arr,
-        tangent,
-    ):
-        frame = [
-            (0.0, 0.0, 0.0),
-        ]
-
-        for index in range(1, len(ceil_distances)):
-            seg_length = ceil_distances[index] - ceil_distances[index - 1]
-
-            previous_position = np.asarray(
-                frame[-1],
-                dtype=np.float64,
-            )
-
-            direction = frame_tangent[index - 1]
-
-            position = previous_position + seg_length * direction
-
-            frame.append(tuple(position.tolist()))
-
-        y_coords = np.array([p[1] for p in frame])
-        mean_y_ceil = np.mean(y_coords)
-        shifted_frame = [(p[0], p[1] - mean_y_ceil, p[2]) for p in frame]
-        truncated_frame = shifted_frame[: len(distances)]
-
-        animation[float(time)] = successive_rotations(
-            bind_positions,
-            np.array(truncated_frame),
-            is_positions=True,
-        )
-
-    return animation
+    return _integrate_tangents_to_rotations(d_arr, t_arr, tangent, ceil_distances)
 
 
 def chain_wave_generator(

@@ -1,6 +1,33 @@
 import numpy as np
 
 
+def _slice_and_center_midpoint(
+    mesh_vertices: np.ndarray,
+    p_u: np.ndarray,
+    p_v: np.ndarray,
+    max_edge_len: float,
+) -> np.ndarray:
+    """
+    Computes an unbiased orthogonal cross-sectional slice around the edge midpoint,
+    clusters proximal surface vertices, and returns the slice centroid.
+    """
+    mid_initial = (p_u + p_v) / 2.0
+    edge_vec = p_v - p_u
+    length = np.linalg.norm(edge_vec)
+    dir_vec = edge_vec / (length + 1e-12)
+    disp_to_mid = mesh_vertices - mid_initial
+    proj_along_dir = np.abs(np.dot(disp_to_mid, dir_vec))
+
+    slice_mask = proj_along_dir < (max_edge_len * 0.5)
+    if np.sum(slice_mask) >= 3:
+        slice_verts = mesh_vertices[slice_mask]
+        dist_to_mid = np.linalg.norm(slice_verts - mid_initial, axis=1)
+        min_d = np.min(dist_to_mid)
+        cluster_mask = dist_to_mid < (min_d * 2.5 + max_edge_len)
+        return np.mean(slice_verts[cluster_mask], axis=0)
+    return mid_initial
+
+
 def subdivide_and_center_skeleton(
     mesh_vertices, skeleton_vertices, skeleton_edges, max_edge_len=0.1, safety_iter=15
 ):
@@ -45,25 +72,12 @@ def subdivide_and_center_skeleton(
             length = np.linalg.norm(edge_vec)
 
             if length > max_edge_len:
-                mid_initial = (p_u + p_v) / 2.0
                 if subdiv_iters < 8:
-                    dir_vec = edge_vec / (length + 1e-12)
-                    disp_to_mid = mesh_vertices - mid_initial
-                    proj_along_dir = np.abs(np.dot(disp_to_mid, dir_vec))
-
-                    # Unbiased orthogonal plane slice (prevents near-neighbor distance bias)
-                    slice_mask = proj_along_dir < (max_edge_len * 0.5)
-
-                    if np.sum(slice_mask) >= 3:
-                        slice_verts = mesh_vertices[slice_mask]
-                        dist_to_mid = np.linalg.norm(slice_verts - mid_initial, axis=1)
-                        min_d = np.min(dist_to_mid)
-                        cluster_mask = dist_to_mid < (min_d * 2.5 + max_edge_len)
-                        mid_centered = np.mean(slice_verts[cluster_mask], axis=0)
-                    else:
-                        mid_centered = mid_initial
+                    mid_centered = _slice_and_center_midpoint(
+                        mesh_vertices, p_u, p_v, max_edge_len
+                    )
                 else:
-                    mid_centered = mid_initial
+                    mid_centered = (p_u + p_v) / 2.0
 
                 new_idx = len(curr_v)
                 curr_v.append(mid_centered)
@@ -212,23 +226,9 @@ def refine_and_center_skeleton_iterative(
             length = np.linalg.norm(edge_vec)
 
             if length > max_edge_len:
-                mid_initial = (p_u + p_v) / 2.0
-                dir_vec = edge_vec / (length + 1e-12)
-
-                disp_to_mid = mesh_vertices - mid_initial
-                proj_along_dir = np.abs(np.dot(disp_to_mid, dir_vec))
-
-                slice_mask = proj_along_dir < (max_edge_len * 0.5)
-
-                if np.sum(slice_mask) >= 3:
-                    slice_verts = mesh_vertices[slice_mask]
-                    dist_to_mid = np.linalg.norm(slice_verts - mid_initial, axis=1)
-                    min_d = np.min(dist_to_mid)
-                    cluster_mask = dist_to_mid < (min_d * 2.5 + max_edge_len)
-                    mid_centered = np.mean(slice_verts[cluster_mask], axis=0)
-                else:
-                    mid_centered = mid_initial
-
+                mid_centered = _slice_and_center_midpoint(
+                    mesh_vertices, p_u, p_v, max_edge_len
+                )
                 new_idx = len(curr_v)
                 curr_v.append(mid_centered)
                 velocities.append(np.zeros(3))

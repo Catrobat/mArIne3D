@@ -180,8 +180,8 @@ DEFAULT_FISH_PARAMS: dict[str, Any] = {
             "head_amplitude_ratio": 0.14,
             "growth_factor": 0.22,
             "pectoral_mode": "closed",
-            "pectoral_close_deg": 35.0,
-            "dorsal_flex_deg": 5.0,
+            "pectoral_close_deg": 38.0,
+            "dorsal_flex_deg": 2.0,
             "is_loopable": True,
         },
     },
@@ -201,15 +201,15 @@ class FishModels(Pipeline):
     End-to-end procedural animation pipeline for fish and aquatic organisms.
 
     Performs:
-    1. 3D Shape Diameter Function (SDF) and mesh graph anatomical fin and body segmentation.
-    2. Automatic tail orientation detection (vertical for fish/sharks vs. horizontal for cetaceans).
-    3. Lateral Bishop-frame straightening: Flattens curvature in the lateral swimming plane
+    - 3D Shape Diameter Function (SDF) and mesh graph anatomical fin and body segmentation.
+    - Automatic tail orientation detection (vertical for fish/sharks vs. horizontal for cetaceans).
+    - Lateral Bishop-frame straightening: Flattens curvature in the lateral swimming plane
        (Z-axis for vertical-tail fish, Y-axis for horizontal-tail cetaceans), preserving the
        natural tail blade profile and longitudinal length.
-    4. Hierarchical armature construction with dedicated tail bones, side pectoral fin bones,
+    - Hierarchical armature construction with dedicated tail bones, side pectoral fin bones,
        and optional dorsal fin bones.
-    5. Direction-aligned procedural wave animations steered into the detected swimming plane.
-    6. Comprehensive intermediate artifact export for diagnostics and inspection.
+    - Direction-aligned procedural wave animations steered into the detected swimming plane.
+    - Comprehensive intermediate artifact export for diagnostics and inspection.
     """
 
     def __init__(
@@ -483,15 +483,15 @@ class FishModels(Pipeline):
                 face_label_array[comp] = part_id
             part_id += 1
 
-        # 1. Fill isolated face gaps with majority voting
+        # Fill isolated face gaps with majority voting
         refined_face_labels = _fill_face_gaps(
             mesh, face_label_array, adj_dict, max_iters=2
         )
-        # 2. Island removal FIRST (kills any detached false-positive noise before dilation)
+        # Island removal FIRST (kills any detached false-positive noise before dilation)
         cleaned_face_labels = _remove_orphan_islands(
             mesh, refined_face_labels, adj_dict, min_area_ratio=0.08
         )
-        # 3. Fin boundary expansion LAST (cleanly seals the root attachment crease)
+        # Fin boundary expansion LAST (cleanly seals the root attachment crease)
         final_face_labels = _expand_fin_boundaries(
             mesh, cleaned_face_labels, adj_dict, rounds=1
         )
@@ -544,7 +544,7 @@ class FishModels(Pipeline):
                 }
             )
 
-        # 1. Pass 1: Median & Terminal Fins (Tail & Dorsal) + Keel Anomaly Filter
+        # Pass 1: Median & Terminal Fins (Tail & Dorsal) + Keel Anomaly Filter
         for c in cluster_meta:
             cx, cy, cz = c["centroid"]
 
@@ -560,7 +560,7 @@ class FishModels(Pipeline):
             elif cy > 0.08 and abs(cz) < 0.15:
                 c["label"] = "dorsal_fin"
 
-        # 2. Pass 2: Bilateral Paired Pectoral Fins (Side Fins)
+        # Pass 2: Bilateral Paired Pectoral Fins (Side Fins)
         unlabeled = [c for c in cluster_meta if c["label"] is None]
 
         left_candidates = [c for c in unlabeled if c["centroid"][2] > 0.02]
@@ -1188,32 +1188,70 @@ class FishModels(Pipeline):
         self.armature = armature
         return armature
 
-    def animate(self) -> Animator:
+    @staticmethod
+    def generate_base_animation(
+        armature: Armature,
+        wave_amplitude: float = 0.22,
+        wave_duration: float = 1.4,
+        frame_rate: float = 30.0,
+        head_amplitude_ratio: float = 0.08,
+        num_waves: float = 0.85,
+        tail_orientation: str = "vertical",
+        pectoral_mode: str = "active",
+        pectoral_flap_deg: float = 14.0,
+        pectoral_pitch_deg: float = 6.0,
+        pectoral_close_deg: float = 38.0,
+        dorsal_flex_deg: float = 4.0,
+    ) -> dict[float, list[np.ndarray]]:
         """
-        Dynamically creates and registers procedural swimming, idle, and sprint
-        animation clips steered into the plane of the detected tail orientation
-        with anchored head stabilization and synchronized fin kinematics.
+        Synthesizes natural traveling wave deformations and fin kinematics for fish.
+
+        Steers the traveling lateral wave according to tail orientation (yaw across Z for
+        vertical-tail fish, pitch across Y for horizontal-tail cetaceans). Coordinates
+        pectoral side fins (active flapping/pitching or closed streamlined tuck with minimal
+        hydrodynamic flutter) and dorsal fin stabilization.
+
+        Parameters
+        ----------
+        armature : Armature
+            The rigged skeletal armature containing spine, tail, and optional fin bones.
+        wave_amplitude : float, default=0.22
+            Base undulation amplitude of the traveling lateral body wave.
+        wave_duration : float, default=1.4
+            Duration of one complete swimming wave cycle in seconds.
+        frame_rate : float, default=30.0
+            Sampling frame rate (FPS) for keyframe generation.
+        head_amplitude_ratio : float, default=0.08
+            Fraction of wave amplitude allowed at the snout / anterior cranial tip.
+        num_waves : float, default=0.85
+            Wavenumber of cycles distributed along the fish's total spine length.
+        tail_orientation : str, default="vertical"
+            Anatomical caudal fin plane ("vertical" for fish/sharks, "horizontal" for cetaceans).
+        pectoral_mode : str, default="active"
+            Secondary pectoral fin locomotion mode ("active" for flapping, "closed" for sprint tuck).
+        pectoral_flap_deg : float, default=14.0
+            Flapping roll excursion amplitude in degrees (active mode).
+        pectoral_pitch_deg : float, default=6.0
+            Pitching feathering excursion amplitude in degrees (active mode).
+        pectoral_close_deg : float, default=38.0
+            Streamlined tuck angle folded against the lateral torso in degrees (closed mode).
+        dorsal_flex_deg : float, default=4.0
+            Top dorsal fin stabilization flex amplitude in degrees.
 
         Returns
         -------
-        Animator
-            The Animator configured with steered AnimationClip objects.
+        dict[float, list[np.ndarray]]
+            Mapping from keyframe timestamp (seconds) to the list of 3x3 local rotation matrices
+            for every bone in armature.bones_list.
         """
-        armature = self.model.armature or self.armature
-        if armature is None:
-            raise ValueError(
-                "Armature is not set on model. Run rig() before animate()."
-            )
-
-        animator = Animator(armature=armature)
-
-        # Primary longitudinal chain (spine + tail bones)
         spine_indices = [
             i
             for i, b in enumerate(armature.bones_list)
             if "pectoral" not in b.id and "dorsal" not in b.id
         ]
         bones = [armature.bones_list[i] for i in spine_indices]
+        if not bones:
+            return {}
 
         # Extract cumulative arc-length distances along the spine
         positions = [np.array(bones[0].head, dtype=np.float64)]
@@ -1231,11 +1269,8 @@ class FishModels(Pipeline):
             [cum_dist, np.zeros_like(cum_dist), np.zeros_like(cum_dist)], axis=-1
         )
 
-        if self.tail_orientation is None:
-            self.tail_orientation = self._detect_tail_orientation()
-
         # Steer rotation: Fish undulate across Z (transverse/yaw), Cetaceans across Y (sagittal/pitch)
-        if self.tail_orientation == "vertical":
+        if tail_orientation == "vertical":
             steer_rot = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])[
                 :3, :3
             ]
@@ -1257,128 +1292,165 @@ class FishModels(Pipeline):
 
         num_total_bones = len(armature.bones_list)
 
-        for clip_name, clip_cfg in self.animations.items():
-            wave_amplitude = clip_cfg.get("wave_amplitude", 0.22)
-            wave_duration = clip_cfg.get("wave_duration", 1.4)
-            num_waves = clip_cfg.get("num_waves", 0.85)
-            head_amplitude_ratio = clip_cfg.get("head_amplitude_ratio", 0.08)
-            pectoral_mode = clip_cfg.get("pectoral_mode", "active")
-            pectoral_flap_deg = clip_cfg.get("pectoral_flap_deg", 14.0)
-            pectoral_pitch_deg = clip_cfg.get("pectoral_pitch_deg", 6.0)
-            pectoral_close_deg = clip_cfg.get("pectoral_close_deg", 35.0)
-            dorsal_flex_deg = clip_cfg.get("dorsal_flex_deg", 4.0)
-            is_loopable = clip_cfg.get("is_loopable", True)
+        # Smooth quadratic envelope: Anchors snout and smoothly expands toward caudal fin
+        envelope = head_amplitude_ratio + (1.0 - head_amplitude_ratio) * (norm_s**2)
 
-            # Smooth Quadratic Envelope: Anchors snout and smoothly expands toward caudal fin
-            envelope = head_amplitude_ratio + (1.0 - head_amplitude_ratio) * (norm_s**2)
+        num_frames = int(round(wave_duration * frame_rate))
+        times = np.linspace(0.0, wave_duration, num_frames, endpoint=False)
+        omega = 2.0 * np.pi / wave_duration
+        k = 2.0 * np.pi * num_waves / total_len
 
-            num_frames = int(round(wave_duration * self.frame_rate))
-            times = np.linspace(0.0, wave_duration, num_frames, endpoint=False)
-            omega = 2.0 * np.pi / wave_duration
-            k = 2.0 * np.pi * num_waves / total_len
+        # Adapt tuck angles from fin rest orientation to cleanly hug the lateral body wall
+        tuck_l = np.radians(pectoral_close_deg)
+        tuck_r = np.radians(pectoral_close_deg)
+        if l_pec_idx is not None:
+            b_l = armature.bones_list[l_pec_idx]
+            v_l = np.array(b_l.tail) - np.array(b_l.head)
+            if abs(v_l[2]) > 1e-6:
+                rest_ang_l = float(np.arctan2(abs(v_l[2]), max(v_l[0], 1e-6)))
+                tuck_l = min(tuck_l, rest_ang_l)
+        if r_pec_idx is not None:
+            b_r = armature.bones_list[r_pec_idx]
+            v_r = np.array(b_r.tail) - np.array(b_r.head)
+            if abs(v_r[2]) > 1e-6:
+                rest_ang_r = float(np.arctan2(abs(v_r[2]), max(v_r[0], 1e-6)))
+                tuck_r = min(tuck_r, rest_ang_r)
 
-            clip_positions: dict[float, list[np.ndarray]] = {}
+        clip_positions: dict[float, list[np.ndarray]] = {}
 
-            for t in times:
-                phase = k * cum_dist - omega * t
-                amp = wave_amplitude * envelope
-                d_env_ds = np.gradient(amp, cum_dist)
-                dy_dx = d_env_ds * np.sin(phase) + amp * k * np.cos(phase)
+        for t in times:
+            phase = k * cum_dist - omega * t
+            amp = wave_amplitude * envelope
+            d_env_ds = np.gradient(amp, cum_dist)
+            dy_dx = d_env_ds * np.sin(phase) + amp * k * np.cos(phase)
 
-                tangents = np.stack(
-                    [np.ones_like(dy_dx), dy_dx, np.zeros_like(dy_dx)], axis=-1
-                )
-                tangents /= np.linalg.norm(tangents, axis=-1, keepdims=True)
+            tangents = np.stack(
+                [np.ones_like(dy_dx), dy_dx, np.zeros_like(dy_dx)], axis=-1
+            )
+            tangents /= np.linalg.norm(tangents, axis=-1, keepdims=True)
 
-                frame_pts = [np.array([0.0, 0.0, 0.0])]
-                for i in range(len(seg_lengths)):
-                    frame_pts.append(frame_pts[-1] + seg_lengths[i] * tangents[i])
-                frame_pts = np.array(frame_pts)
-                frame_pts[:, 1] -= np.mean(frame_pts[:, 1])
+            frame_pts = [np.array([0.0, 0.0, 0.0])]
+            for i in range(len(seg_lengths)):
+                frame_pts.append(frame_pts[-1] + seg_lengths[i] * tangents[i])
+            frame_pts = np.array(frame_pts)
+            frame_pts[:, 1] -= np.mean(frame_pts[:, 1])
 
-                raw_rots = successive_rotations(
-                    bind_positions, frame_pts, is_positions=True
-                )
-                rot_matrices = [
-                    r.detach().cpu().numpy()
-                    if isinstance(r, torch.Tensor)
-                    else np.asarray(r)
-                    for r in raw_rots
-                ]
-                if steer_rot is not None:
-                    rot_matrices = [steer_rot @ R @ steer_rot.T for R in rot_matrices]
+            raw_rots = successive_rotations(
+                bind_positions, frame_pts, is_positions=True
+            )
+            rot_matrices = [
+                r.detach().cpu().numpy()
+                if isinstance(r, torch.Tensor)
+                else np.asarray(r)
+                for r in raw_rots
+            ]
+            if steer_rot is not None:
+                rot_matrices = [steer_rot @ R @ steer_rot.T for R in rot_matrices]
 
-                full_frame = [
-                    np.eye(3, dtype=np.float32) for _ in range(num_total_bones)
-                ]
-                for idx_in_spine, bone_idx in enumerate(spine_indices):
-                    full_frame[bone_idx] = rot_matrices[idx_in_spine].astype(np.float32)
+            full_frame = [np.eye(3, dtype=np.float32) for _ in range(num_total_bones)]
+            for idx_in_spine, bone_idx in enumerate(spine_indices):
+                full_frame[bone_idx] = rot_matrices[idx_in_spine].astype(np.float32)
 
-                # Pectoral Fin Kinematics
-                if pectoral_mode == "closed":
-                    tuck_angle = np.radians(pectoral_close_deg)
-                    flutter = np.radians(2.0) * np.sin(omega * t)
-                    if l_pec_idx is not None:
-                        R_fold_l = trimesh.transformations.rotation_matrix(
-                            -tuck_angle, [0, 1, 0]
-                        )[:3, :3]
-                        R_roll_l = trimesh.transformations.rotation_matrix(
-                            flutter, [1, 0, 0]
-                        )[:3, :3]
-                        full_frame[l_pec_idx] = (R_fold_l @ R_roll_l).astype(np.float32)
-                    if r_pec_idx is not None:
-                        R_fold_r = trimesh.transformations.rotation_matrix(
-                            tuck_angle, [0, 1, 0]
-                        )[:3, :3]
-                        R_roll_r = trimesh.transformations.rotation_matrix(
-                            -flutter, [1, 0, 0]
-                        )[:3, :3]
-                        full_frame[r_pec_idx] = (R_fold_r @ R_roll_r).astype(np.float32)
-                else:
-                    flap_angle = np.radians(pectoral_flap_deg) * np.sin(
-                        omega * t + np.pi / 4
-                    )
-                    pitch_angle = np.radians(pectoral_pitch_deg) * np.cos(
-                        omega * t + np.pi / 4
-                    )
-                    if l_pec_idx is not None:
-                        R_roll_l = trimesh.transformations.rotation_matrix(
-                            flap_angle, [1, 0, 0]
-                        )[:3, :3]
-                        R_pitch_l = trimesh.transformations.rotation_matrix(
-                            pitch_angle, [0, 1, 0]
-                        )[:3, :3]
-                        full_frame[l_pec_idx] = (R_roll_l @ R_pitch_l).astype(
-                            np.float32
-                        )
-                    if r_pec_idx is not None:
-                        R_roll_r = trimesh.transformations.rotation_matrix(
-                            -flap_angle, [1, 0, 0]
-                        )[:3, :3]
-                        R_pitch_r = trimesh.transformations.rotation_matrix(
-                            pitch_angle, [0, 1, 0]
-                        )[:3, :3]
-                        full_frame[r_pec_idx] = (R_roll_r @ R_pitch_r).astype(
-                            np.float32
-                        )
-
-                # Dorsal Fin Stabilization Flexing
-                if dorsal_idx is not None:
-                    d_angle = np.radians(dorsal_flex_deg) * np.sin(
-                        omega * t - np.pi / 3
-                    )
-                    R_dorsal = trimesh.transformations.rotation_matrix(
-                        d_angle, [0, 0, 1]
+            # Pectoral Fin Kinematics
+            if pectoral_mode == "closed":
+                # Streamlined tuck tightly against lateral body wall
+                # Flutter reduced to minimal natural deflection (0.5 deg) hardcoded inside
+                flutter = np.radians(0.5) * np.sin(omega * t)
+                if l_pec_idx is not None:
+                    R_fold_l = trimesh.transformations.rotation_matrix(
+                        tuck_l, [0, 1, 0]
                     )[:3, :3]
-                    full_frame[dorsal_idx] = R_dorsal.astype(np.float32)
+                    R_roll_l = trimesh.transformations.rotation_matrix(
+                        flutter, [1, 0, 0]
+                    )[:3, :3]
+                    full_frame[l_pec_idx] = (R_fold_l @ R_roll_l).astype(np.float32)
+                if r_pec_idx is not None:
+                    R_fold_r = trimesh.transformations.rotation_matrix(
+                        -tuck_r, [0, 1, 0]
+                    )[:3, :3]
+                    R_roll_r = trimesh.transformations.rotation_matrix(
+                        -flutter, [1, 0, 0]
+                    )[:3, :3]
+                    full_frame[r_pec_idx] = (R_fold_r @ R_roll_r).astype(np.float32)
+            else:
+                flap_angle = np.radians(pectoral_flap_deg) * np.sin(
+                    omega * t + np.pi / 4
+                )
+                pitch_angle = np.radians(pectoral_pitch_deg) * np.cos(
+                    omega * t + np.pi / 4
+                )
+                if l_pec_idx is not None:
+                    R_roll_l = trimesh.transformations.rotation_matrix(
+                        flap_angle, [1, 0, 0]
+                    )[:3, :3]
+                    R_pitch_l = trimesh.transformations.rotation_matrix(
+                        pitch_angle, [0, 1, 0]
+                    )[:3, :3]
+                    full_frame[l_pec_idx] = (R_roll_l @ R_pitch_l).astype(np.float32)
+                if r_pec_idx is not None:
+                    R_roll_r = trimesh.transformations.rotation_matrix(
+                        -flap_angle, [1, 0, 0]
+                    )[:3, :3]
+                    R_pitch_r = trimesh.transformations.rotation_matrix(
+                        -pitch_angle, [0, 1, 0]
+                    )[:3, :3]
+                    full_frame[r_pec_idx] = (R_roll_r @ R_pitch_r).astype(np.float32)
 
-                clip_positions[float(t)] = full_frame
+            # Dorsal Fin Stabilization Flexing
+            if dorsal_idx is not None:
+                d_angle = np.radians(dorsal_flex_deg) * np.sin(omega * t - np.pi / 3)
+                R_dorsal = trimesh.transformations.rotation_matrix(d_angle, [0, 0, 1])[
+                    :3, :3
+                ]
+                full_frame[dorsal_idx] = R_dorsal.astype(np.float32)
+
+            clip_positions[float(t)] = full_frame
+
+        return clip_positions
+
+    def animate(self) -> Animator:
+        """
+        Dynamically creates and registers procedural swimming, idle, and sprint
+        animation clips steered into the plane of the detected tail orientation
+        with anchored head stabilization and synchronized fin kinematics.
+
+        Returns
+        -------
+        Animator
+            The Animator configured with steered AnimationClip objects.
+        """
+        armature = self.model.armature or self.armature
+        if armature is None:
+            raise ValueError(
+                "Armature is not set on model. Run rig() before animate()."
+            )
+
+        animator = Animator(armature=armature)
+
+        if self.tail_orientation is None:
+            self.tail_orientation = self._detect_tail_orientation()
+
+        for clip_name, clip_cfg in self.animations.items():
+            clip_positions = self.generate_base_animation(
+                armature=armature,
+                wave_amplitude=clip_cfg.get("wave_amplitude", 0.22),
+                wave_duration=clip_cfg.get("wave_duration", 1.4),
+                frame_rate=self.frame_rate,
+                head_amplitude_ratio=clip_cfg.get("head_amplitude_ratio", 0.08),
+                num_waves=clip_cfg.get("num_waves", 0.85),
+                tail_orientation=self.tail_orientation,
+                pectoral_mode=clip_cfg.get("pectoral_mode", "active"),
+                pectoral_flap_deg=clip_cfg.get("pectoral_flap_deg", 14.0),
+                pectoral_pitch_deg=clip_cfg.get("pectoral_pitch_deg", 6.0),
+                pectoral_close_deg=clip_cfg.get("pectoral_close_deg", 38.0),
+                dorsal_flex_deg=clip_cfg.get("dorsal_flex_deg", 4.0),
+            )
 
             clip = AnimationClip(
                 name=clip_name,
-                duration=wave_duration,
+                duration=clip_cfg.get("wave_duration", 1.4),
                 armature=armature,
-                is_loopable=is_loopable,
+                is_loopable=clip_cfg.get("is_loopable", True),
             )
             clip.positions = clip_positions
             animator.add_animation_clip(clip)
@@ -1389,12 +1461,12 @@ class FishModels(Pipeline):
     def save_intermediate_artifacts(self, output_dir: str | Path) -> dict[str, Path]:
         """
         Exports all intermediate stages to a dedicated folder for diagnostics and visualization:
-        1. 01_segmented_mesh.glb: Color-coded 3D mesh highlighting anatomical parts on initial mesh.
-        2. 02_extracted_1d_spine.glb: Extracted 1D centerline spine control points.
-        3. 03_evaluated_spline.glb: Dense Catmull-Rom spline curve.
-        4. 04_canonical_mesh.glb: Canonical rest-pose 3D mesh.
-        5. 05_rigged_armature.glb: Rest-pose mesh with rigged bones and skin weights.
-        6. 06_animated_fish.glb: Full skeletal animated GLB.
+        - 01_segmented_mesh.glb: Color-coded 3D mesh highlighting anatomical parts on initial mesh.
+        - 02_extracted_1d_spine.glb: Extracted 1D centerline spine control points.
+        - 03_evaluated_spline.glb: Dense Catmull-Rom spline curve.
+        - 04_canonical_mesh.glb: Canonical rest-pose 3D mesh.
+        - 05_rigged_armature.glb: Rest-pose mesh with rigged bones and skin weights.
+        - 06_animated_fish.glb: Full skeletal animated GLB.
 
         Parameters
         ----------

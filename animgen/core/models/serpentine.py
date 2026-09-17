@@ -44,11 +44,11 @@ class SerpentineModels(Pipeline):
     End-to-end procedural animation pipeline for serpentine creatures (snakes, eels, worms).
 
     Performs:
-    1. Single continuous body segmentation.
-    2. Mesh contraction, Algo B centerline refinement, 0.5-alpha Catmull-Rom spline construction,
+    - Single continuous body segmentation.
+    - Mesh contraction, Algo B centerline refinement, 0.5-alpha Catmull-Rom spline construction,
        and parallel-transport mesh straightening.
-    3. Hierarchical armature construction along the straightened spine.
-    4. Procedural wave animations steered into the lateral Z-axis plane.
+    - Hierarchical armature construction along the straightened spine.
+    - Procedural wave animations steered into the lateral Z-axis plane.
     """
 
     def __init__(
@@ -136,7 +136,7 @@ class SerpentineModels(Pipeline):
         trimesh.Trimesh
             The straightened canonical mesh.
         """
-        # 1. Mesh Contraction (Auto-welds manifold geometry internally)
+        # Mesh Contraction (Auto-welds manifold geometry internally)
         skel_v, skel_e = extract_skeleton(
             self.model.mesh,
             max_iters=20,
@@ -145,7 +145,7 @@ class SerpentineModels(Pipeline):
             return_tuple=True,
         )
 
-        # 2. Algo B Iterative Slice Centering
+        # Algo B Iterative Slice Centering
         skel_v_final, skel_e_ref = refine_and_center_skeleton_iterative(
             self.model.mesh.vertices,
             skel_v,
@@ -154,7 +154,7 @@ class SerpentineModels(Pipeline):
             num_iters=10,
         )
 
-        # 3. Trace longest 1D continuous node chain from Head to Tail
+        # Trace longest 1D continuous node chain from Head to Tail
         G = nx.Graph()
         for u, v in skel_e_ref:
             dist = float(np.linalg.norm(skel_v_final[u] - skel_v_final[v]))
@@ -206,15 +206,15 @@ class SerpentineModels(Pipeline):
         ordered_verts = skel_v_final[chain]
         pts_t = [torch.tensor(v, dtype=torch.float32) for v in ordered_verts]
 
-        # 4. Catmull-Rom Spline (alpha=0.5 centripetal, phantom_num_points=1)
+        # Catmull-Rom Spline (alpha=0.5 centripetal, phantom_num_points=1)
         self.spline = Spline(pts_t, alpha=0.5, phantom_num_points=1)
         eval_pts = self.spline.evaluate_curve(num_points_per_segment=5)
         self.source_spine = np.array([pt.detach().cpu().numpy() for pt in eval_pts])
 
-        # 5. Straighten mesh along spline
+        # Straighten mesh along spline
         straight_mesh = straighten(self.model.mesh, spine_points=self.spline, axis="x")
 
-        # 6. Compute target straight spine matching cumulative arc length
+        # Compute target straight spine matching cumulative arc length
         seg_lens = np.linalg.norm(np.diff(self.source_spine, axis=0), axis=1)
         s = np.concatenate(([0.0], np.cumsum(seg_lens)))
         self.target_spine = np.zeros_like(self.source_spine)
