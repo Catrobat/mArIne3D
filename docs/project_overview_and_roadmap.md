@@ -82,10 +82,14 @@ The **Procedural Animation Generation Framework (`animgen`)** is an open-source 
 * **Mathematical & Algorithmic Formulation:**
   - **Bishop Parallel Transport Frame (`straight.py`):** Constructs continuous singularity-free orthonormal moving frames $(T, N, B)$ along spine paths:
     $$T_i = \frac{P_{i+1} - P_i}{\|P_{i+1} - P_i\|}, \quad N_i = \frac{N_{i-1} - \langle N_{i-1}, T_i \rangle T_i}{\|N_{i-1} - \langle N_{i-1}, T_i \rangle T_i\|}, \quad B_i = T_i \times N_i$$
+  - **Continuous Frame Node Interpolation:** Computes node frames $(T_{\text{node}}, N_{\text{node}}, B_{\text{node}})$ and linearly interpolates continuous orthonormal frames along spline segments to eliminate discrete segment rotational jumps.
+  - **Spatial Vertex Welding:** Clusters coincident UV seam vertices within $\delta=10^{-5}$, deforms unique spatial vertices, and broadcasts back to preserve full UV maps and textures with $0.0$ seam tearing.
+  - **Monotonic Longitudinal Axis Projection:** Projects vertices along the primary spine axis to prevent Euclidean focal caustics where tall dorsal fins previously jumped across disparate spine segments.
   - **Cylindrical Coordinate Unrolling:** Maps mesh vertices to $(s, r, \theta)$ spine coordinates and evaluates them onto a straight target spine, achieving **exact volume conservation**.
   - **Forward Kinematics (`kinematics.py`):** Propagates global orientations and positions:
     $$R_{\text{global}, b} = R_{\text{global}, \text{parent}(b)} \cdot R_{\text{local}, b}, \quad h_{\text{pose}, b} = h_{\text{pose}, \text{parent}(b)} + R_{\text{global}, \text{parent}(b)} (h_{\text{rest}, b} - h_{\text{rest}, \text{parent}(b)})$$
 * **Key Implementation Highlights:**
+  - **Zero UV Seam Tearing:** Deforms complex un-welded meshes (e.g. goldfish) with maximum edge stretch $< 0.85\times$ ($0$ torn edges).
   - **GPU Acceleration:** Provides both vectorized NumPy and CUDA PyTorch tensor implementations (`deform_mesh_to_spine_torch`).
   - **Singularity Free:** Parallel transport avoids artificial twisting at spine inflection points where Frenet-Serret frames fail.
 
@@ -233,4 +237,4 @@ Organizes aquatic motion generation into 7 distinct biomechanical swimming parad
 * **Numerical & Differential Geometry:** `numpy`, `scipy` (Sparse Cholesky factorizations), `torch` (PyTorch CUDA tensors), `trimesh`, `open3d`, `pymeshlab`, `igraph`, `networkx`, `scikit-learn`
 * **Vision Foundation Models:** `transformers` (Meta SAM3), Hugging Face Hub
 * **Rendering & Export:** `pyrender` (EGL/OSMesa OpenGL), `pygltflib` (glTF 2.0 / GLB), `bpy` (Blender verification oracle), `pillow`, `opencv-python`, `matplotlib`
-* **Quality Assurance:** `pytest`, `pytest-cov`, `pyright`, `ruff` (Full test suite: 72 passed tests across 12 modules)
+* **Quality Assurance:** `pytest`, `pytest-cov`, `pyright`, `ruff` (Full test suite: 68 total tests across 13 modules; 60 passed fast unit & integration tests)

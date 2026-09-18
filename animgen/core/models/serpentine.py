@@ -60,7 +60,10 @@ class SerpentineModels(Pipeline):
         frame_rate: float = DEFAULT_SERPENTINE_PARAMS["frame_rate"],
         reverse: bool = False,
         animations: dict[str, dict[str, Any]] | None = None,
+        n_bones: int | None = None,
     ):
+        if n_bones is not None:
+            num_bones = n_bones
         """
         Initializes the SerpentineModels pipeline.
 

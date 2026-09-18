@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gc
 import os
 from collections import defaultdict
@@ -11,7 +13,10 @@ import torch
 from transformers import Sam3Model, Sam3Processor
 import trimesh
 
-from animgen.core.models.model import BaseModelClass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from animgen.core.models.model import BaseModelClass
 
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
@@ -360,6 +365,8 @@ class SAM3Segmentation:
         """
         if self.model is None or self.processor is None:
             self.model, self.processor = self.load_model()
+
+        from animgen.core.models.model import BaseModelClass
 
         if not isinstance(mesh, BaseModelClass):
             mesh = BaseModelClass(mesh)

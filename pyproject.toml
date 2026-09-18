@@ -26,6 +26,9 @@ dependencies = [
     "pygltflib>=1.16.5",
 ]
 
+[project.scripts]
+animgen = "animgen.cli:main"
+
 [tool.setuptools]
 packages = ["animgen"]
 
