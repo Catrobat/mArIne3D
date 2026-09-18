@@ -261,7 +261,7 @@ def main():
 
     # Load model
     model = mymodel()
-    model_path = "../image_model/SR_GAN_best.pth"
+    model_path = "../models_cache/SR_GAN_best.pth"
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at {model_path}")
     model.load_state_dict(torch.load(model_path))

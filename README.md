@@ -7,24 +7,31 @@ A project dedicated to leveraging generative AI for the creation and enhancement
 
 ## Table of Contents
 
-- [Project Overview](#project-overview)
-- [Key Features](#key-features)
-- [File Structure](#file-structure)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
+- [Marine\_Biology\_GenAI](#marine_biology_genai)
+  - [Table of Contents](#table-of-contents)
+  - [Project Overview](#project-overview)
+  - [Key Features](#key-features)
+  - [File Structure](#file-structure)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+      - [Install Python Packages](#install-python-packages)
+      - [Build Custom Rasterizer](#build-custom-rasterizer)
+      - [Localize Pretrained Models](#localize-pretrained-models)
   - [Usage](#usage)
-- [Contributing](#contributing)
-- [Future Goals](#future-goals)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+    - [Server-side code](#server-side-code)
+    - [Client Side](#client-side)
+    - [Notebook](#notebook)
+  - [Contributing](#contributing)
+  - [Future Goals](#future-goals)
+  - [Acknowledgements](#acknowledgements)
 
 ## Project Overview
 
 This project focuses on developing AI-powered 3D models of marine species for educational and research applications. The system converts user text prompts into realistic 2D images using either Stable Diffusion 3.5 or real-world images from FathomNet for underrepresented species. These images are then transformed into interactive 3D assets using Tencent Hunyuan3D models, producing `.glb` files that can be rendered in Blender, Unity, or AR applications. The solution includes a web-based visualizer and a Unity-based interface to display both textured and mesh views, all deployed on RunPod for scalable access. The goal is to create dynamic, high-quality 3D representations of marine life for immersive learning experiences and scientific exploration.
 
 <div style="text-align: center;">
-  <img src="assets/first.gif" alt="Marine Dataset Architecture" width="800"/>
+  <img src="assets/text2_3D/first.gif" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 
@@ -40,7 +47,7 @@ This project focuses on developing AI-powered 3D models of marine species for ed
 
 
 <div style="text-align: center;">
-  <img src="assets/flow.png" alt="Marine Dataset Architecture" width="800"/>
+  <img src="assets/text2_3D/flow.png" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 ---
@@ -53,19 +60,19 @@ mArIne3D/
 ├── README.md
 ├── Report.md
 ├── assets
-│   ├── dumbo.png
-│   ├── first.gif
-│   ├── first.mp4
-│   ├── first.png
-│   ├── flow.png
-│   ├── wimg1.png
-│   └── wimg2.png
+│   └── text2_3D
+│        ├── dumbo.png
+│        ├── first.gif
+│        ├── first.mp4
+│        ├── first.png
+│        ├── flow.png
+│        ├── wimg1.png
+│        └── wimg2.png
 ├── hy3dgen
-├── image_model
+├── models_cache
 │   └── SR_GAN_best.pth
 ├── notebooks
 │   └── marine-text-to-3d.ipynb
-├── output
 ├── requirements.txt
 ├── txt2_3D
 │   ├── GenAI_image_generator.py
@@ -76,24 +83,6 @@ mArIne3D/
 │   ├── get_models.py
 │   ├── main.py
 │   └── utils.py
-├── visualiser
-│   └── web
-│       ├── app.py
-│       ├── dummy_server.py
-│       ├── output_assets
-│       │   ├── dumbo.png
-│       │   ├── first.png
-│       │   ├── image.png
-│       │   ├── mesh.glb
-│       │   └── painted.glb
-│       ├── remote_server.py
-│       ├── static
-│       │   ├── css
-│       │   │   └── style.css
-│       │   └── js
-│       │       └── viewer.js
-│       └── templates
-│           └── index.html
 └── zip_conversion.py
 ```
 ---
