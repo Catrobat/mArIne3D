@@ -16,7 +16,8 @@
 **Author / Contributor:** [Shivansh Pachnanda](https://github.com/KahnSvaer)  
 **Mentoring Organization:** [Catrobat](https://catrobat.org/)  
 **Program:** [Google Summer of Code 2026](https://summerofcode.withgoogle.com/)  
-**Repository:** [`KahnSvaer/Procedural-Animation-Generation-Framework`](https://github.com/KahnSvaer/Procedural-Animation-Generation-Framework)  
+**Integrated Project Repository:** [`Catrobat/mArIne3D`](https://github.com/Catrobat/mArIne3D) *(Integrated production platform combining 2D-to-3D asset generation and procedural rigging/locomotion)*  
+**Continuous Development Repository:** [`KahnSvaer/Procedural-Animation-Generation-Framework`](https://github.com/KahnSvaer/Procedural-Animation-Generation-Framework) *(Dedicated core development repository tracking continuous engine evolution, geometry solvers, and benchmarks)*  
 
 ---
 
