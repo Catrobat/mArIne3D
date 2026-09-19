@@ -13,8 +13,8 @@ from animgen.rigging.backproject import backproject_masks_to_faces
 
 load_dotenv()
 
-# Path to the undecimated killer whale model
-KILLER_WHALE_MESH_PATH = Path("generated_data/models/img_mesh_Killer_Whale.glb")
+# Path to the killer whale model
+KILLER_WHALE_MESH_PATH = Path("generated_data/models/dec_mesh_Killer_Whale.glb")
 ARTIFACTS_DIR = Path("tests/artifacts/sam3_segmentation")
 
 
@@ -144,8 +144,8 @@ def test_sam3_text_embedder_lazy():
     reason=f"Killer whale mesh not found at {KILLER_WHALE_MESH_PATH}",
 )
 @pytest.mark.skipif(
-    not torch.cuda.is_available() and not os.getenv("HF_TOKEN"),
-    reason="CUDA device or HF_TOKEN required for full SAM3 inference visual test",
+    not torch.cuda.is_available() or not os.getenv("HF_TOKEN"),
+    reason="CUDA device and HF_TOKEN required for full SAM3 inference visual test",
 )
 def test_sam3_visual_killer_whale_tail_segmentation():
     """

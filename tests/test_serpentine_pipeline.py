@@ -10,12 +10,9 @@ from animgen.animation.animator import Animator
 
 
 def _get_snake_mesh_path(filename: str) -> Path | None:
-    for candidate in [
-        Path("generated_data/models") / filename,
-        Path("generated_data/models/models_backup_3") / filename,
-    ]:
-        if candidate.exists():
-            return candidate
+    path = Path("generated_data/models") / filename
+    if path.exists():
+        return path
     return None
 
 

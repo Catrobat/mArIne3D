@@ -93,11 +93,9 @@ def test_fish_process_and_intermediate_artifacts_on_tuna():
     Test FishModels process() with lateral Bishop straightening and save_intermediate_artifacts on Tuna.
     Saves all diagnostic steps into tests/artifacts/fish_pipeline_tuna/.
     """
-    mesh_path = Path("generated_data/models/models_backup_3/paint_mesh_Tuna.glb")
+    mesh_path = Path("generated_data/models/paint_mesh_Tuna.glb")
     if not mesh_path.exists():
-        mesh_path = Path("generated_data/models/paint_mesh_Tuna.glb")
-    if not mesh_path.exists():
-        mesh_path = Path("generated_data/models/models_backup_3/dec_mesh_Tuna.glb")
+        mesh_path = Path("generated_data/models/dec_mesh_Tuna.glb")
     if not mesh_path.exists():
         pytest.skip(f"Tuna mesh not found at {mesh_path}")
 
@@ -175,7 +173,7 @@ def test_fish_process_on_dolphin():
     - Dorsoventral Bishop straightening along Y-axis
     - Dorsoventral XY travelling wave motion
     """
-    mesh_path = Path("generated_data/models/models_backup_3/dec_mesh_Dolphin.glb")
+    mesh_path = Path("generated_data/models/dec_mesh_Dolphin.glb")
     if not mesh_path.exists():
         pytest.skip(f"Dolphin mesh not found at {mesh_path}")
 
@@ -214,8 +212,8 @@ def test_dorsal_to_tail_spine_straightness():
     a straight 3D line from snout to caudal peduncle.
     """
     for model_path in [
-        Path("generated_data/models/models_backup_3/dec_mesh_Tuna.glb"),
-        Path("generated_data/models/models_backup_3/dec_mesh_Dolphin.glb"),
+        Path("generated_data/models/dec_mesh_Tuna.glb"),
+        Path("generated_data/models/dec_mesh_Dolphin.glb"),
     ]:
         if not model_path.exists():
             continue
@@ -266,7 +264,7 @@ def test_fish_align_head_tail_detection():
     Tests that FishModels.align() automatically detects when a model is oriented backwards
     (e.g. tail at -X and snout at +X) and rotates it so snout is at -X and tail at +X.
     """
-    tuna_path = Path("generated_data/models/models_backup_3/dec_mesh_Tuna.glb")
+    tuna_path = Path("generated_data/models/dec_mesh_Tuna.glb")
     if not tuna_path.exists():
         pytest.skip(f"Tuna mesh not found at {tuna_path}")
 
