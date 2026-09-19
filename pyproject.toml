@@ -1,0 +1,114 @@
+[project]
+name = "animgen"
+version = "0.1.0"
+description = "Procedural Animation Generation Framework"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "accelerate>=1.13.0",
+    "numpy>=1.26.4,<2.0.0",
+    "opencv-python>=4.10.0,<4.12.0",
+    "pillow>=12.2.0",
+    "pyrender>=0.1.45",
+    "python-dotenv>=1.2.2",
+    "rembg[gpu]>=2.0.50,<2.0.70",
+    "pymatting==1.1.15",
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "transformers>=5.9.0",
+    "trimesh[easy]>=4.12.2",
+    "open3d>=0.19.0",
+    "pymeshlab>=2025.7.post1",
+    "igraph>=1.0.0",
+    "jaxtyping>=0.3.11",
+    "triangle>=20250106",
+    "scipy>=1.13.0,<1.15.0",
+    "pygltflib>=1.16.5",
+    "diffusers>=0.40.0",
+    "peft==0.15.0",
+    "bitsandbytes>=0.50.2",
+    "fathomnet>=1.10.1",
+    "einops>=0.8.2",
+    "tqdm>=4.68.3",
+    "omegaconf>=2.3.1",
+    "xatlas>=0.0.11",
+    "scikit-learn>=1.9.0",
+    "scikit-image>=0.26.0",
+    "gradio>=6.28.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.53.0",
+    "onnxruntime>=1.30.0",
+]
+
+[project.scripts]
+animgen = "animgen.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "beartype>=0.22.9",
+    "ipykernel>=7.3.0",
+    "ipywidgets>=8.1.8",
+    "matplotlib>=3.10.0",
+    "ninja>=1.13.2",
+    "plotly>=6.0.0",
+    "pre-commit>=4.6.0",
+    "pybind11>=3.1.0",
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pyvista>=0.48.4",
+    "ruff>=0.15.20",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["animgen"]
+
+[tool.uv]
+package = true
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+
+[dependency-groups]
+dev = [
+    "animgen[dev]",
+]
+
+[tool.ruff]
+exclude = [
+    "experiments/",
+    "demo",
+]
+
+[tool.pyright]
+include = ["animgen", "tests"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+    "experiments/",
+    "demo",
+]
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "sam3: marks tests involving SAM3 vision models",
+]
+filterwarnings = [
+    "ignore:tostring\\(\\) is deprecated:DeprecationWarning",
+]
+

@@ -75,7 +75,7 @@ def generate_3d(
 
         # Load SRGAN model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_path = os.path.join(PROJECT_ROOT, "image_model", "SR_GAN_best.pth")
+        model_path = os.path.join(PROJECT_ROOT, "models_cache", "SR_GAN_best.pth")
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
 

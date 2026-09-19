@@ -101,7 +101,7 @@ if __name__ == "__main__":
         # Load SRGAN model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = mymodel()
-        model.load_state_dict(torch.load(os.path.join(PROJECT_ROOT, "image_model", "SR_GAN_best.pth"), map_location=device))
+        model.load_state_dict(torch.load(os.path.join(PROJECT_ROOT, "models_cache", "SR_GAN_best.pth"), map_location=device))
         model.to(device)
         model.eval()
 
