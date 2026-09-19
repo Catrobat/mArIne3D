@@ -24,9 +24,8 @@ A project dedicated to leveraging generative AI for the creation and enhancement
 
 This project focuses on developing AI-powered 3D models of marine species for educational and research applications. The system converts user text prompts into realistic 2D images using either Stable Diffusion 3.5 or real-world images from FathomNet for underrepresented species. These images are then transformed into interactive 3D assets using Tencent Hunyuan3D models, producing `.glb` files that can be rendered in Blender, Unity, or AR applications. The solution includes a web-based visualizer and a Unity-based interface to display both textured and mesh views, all deployed on RunPod for scalable access. The goal is to create dynamic, high-quality 3D representations of marine life for immersive learning experiences and scientific exploration.
 
-<!-- ![img1](assets/first.gif) -->
 <div style="text-align: center;">
-  <img src="assets/first.gif" alt="Marine Dataset Architecture" width="800"/>
+  <img src="../../assets/text2_3D/first.gif" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 
@@ -45,7 +44,7 @@ This project focuses on developing AI-powered 3D models of marine species for ed
 ## In-Depth Feature Explanation
 
 <div style="text-align: center;">
-  <img src="assets/flow.png" alt="Marine Dataset Architecture" width="800"/>
+  <img src="../../assets/text2_3D/flow.png" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 ### 1. Dual-Mode Image Generation
@@ -75,9 +74,8 @@ We ultimately adopted **Stable Diffusion 3.5 Large Turbo** for our pipeline, usi
 
 Moreover, to address common **artifacts** such as **extra limbs** or **deformations** in generated images, we implemented **prompt tuning**. Users simply provide the **marine species name**, while our system automatically augments the **prompt** with **descriptive details** like **lighting**, **background**, and **anatomical correctness** to guide **Stable Diffusion** toward producing **clean**, **high-resolution**, and **anatomically accurate 2D renders**.
 
-<!-- ![img2](output_assets/dumbo.png) -->
 <div style="text-align: center;">
-  <img src="assets/dumbo.png" alt="Marine Dataset Architecture" width="800"/>
+  <img src="../../assets/text2_3D/dumbo.png" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 **Image Fetching approach**  
@@ -103,9 +101,8 @@ Once the **highest-quality image** is selected, it undergoes **super-resolution 
 
 Hence by combining **Stable Diffusion 3.5 Large Turbo** with **FathomNet fallback** and **super-resolution filtering**, our **dual-mode image generation pipeline** ensures robust, high-quality, and **dataset-backed 2D images** for both **common** and **rare marine species**, providing a strong foundation for subsequent **3D model synthesis**.
 
-<!-- ![img3](output_assets/first.png) -->
 <div style="text-align: center;">
-  <img src="assets/first.png" alt="Marine Dataset Architecture" width="800"/>
+  <img src="../../assets/text2_3D/first.png" alt="Marine Dataset Architecture" width="800"/>
 </div>
 
 
@@ -244,8 +241,8 @@ The system automatically:
 
 This interactive frontend ensures a **complete end-to-end experience**: users start with a text prompt and end up **interacting with a fully generated 3D asset** in their browser with zero setup overhead.
 
-![img4](assets/wimg1.png)
-![img5](assets/wimg2.png)
+![img4](../../assets/text2_3D/wimg1.png)
+![img5](../../assets/text2_3D/wimg2.png)
 
 ---
 
@@ -546,6 +543,12 @@ This project lays the foundation for AI-powered 3D asset generation for marine b
 
 4. **Domain-Specific Fine-Tuning:**  
    Expand the current solution beyond marine biology by creating a user-friendly toolkit for fine-tuning Stable Diffusion 3.5 on custom datasets. This will enable domain-specific 3D asset generation across various industries and research fields.
+
+---
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../../LICENSE).
 
 ---
 

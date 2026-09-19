@@ -5,10 +5,10 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![glTF 2.0](https://img.shields.io/badge/glTF-2.0%20%2F%20GLB-green.svg)](https://www.khronos.org/gltf/)
-[![Tests](https://img.shields.io/badge/tests-60%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-68%20passed-brightgreen.svg)](./tests/)
 [![GSoC 2026](https://img.shields.io/badge/GSoC-2026-orange.svg)](https://summerofcode.withgoogle.com/)
 [![Mentoring Organization: Catrobat](https://img.shields.io/badge/Mentoring%20Org-Catrobat-red.svg)](https://catrobat.org/)
-[![Final Report](https://img.shields.io/badge/GSoC%20Report-Comprehensive-purple.svg)](docs/reports/report-gsoc-2026.md)
+[![Final Report](https://img.shields.io/badge/GSoC%20Report-Comprehensive-purple.svg)](./docs/reports/report-gsoc-2026.md)
 
 **Zero-touch procedural rigging, discrete heat skinning, and biomechanical locomotion synthesis for non-humanoid 3D biological organisms.**
 
@@ -52,7 +52,7 @@ Static 3D Mesh (.glb / .obj / .ply)
 ## Key Features
 
 - 🧬 **Zero-Shot Appendage Segmentation**: Open-vocabulary 2D/3D part segmentation via Meta SAM3 multi-view backprojection and 3D Shape Diameter Function (SDF) ray analysis.
-- 🦴 **Curvature-Preserving Medial Skeleton Extraction**: Cotangent Laplace-Beltrami contraction with iterative orthogonal cross-sectional slice centroid refinement (Algo B) and Taubin low-pass smoothing.
+- 🦴 **Curvature-Preserving Medial Skeleton Extraction**: Cotangent Laplace-Beltrami contraction with Laplacian smoothing and an iterative slicing algorithm to increase density and Taubin low-pass smoothing.
 - 🔥 **Discrete Heat Diffusion Skinning**: Geometry-aware per-vertex bone weight solver based on the Baran & Popović heat conduction formulation $((L + MH)W = MHP)$ with sparse Cholesky factorization in $< 20\text{ ms}$ (verified parity against Blender's `meshlaplacian.cc`).
 - 🌊 **Harmonic Wave Kinematics**: Procedural generators for Anguilliform (full-spine travelling wave), Carangiform (posterior oscillation), Rajiform (pectoral flapping), and escape pulse dynamics with SLERP keyframing.
 - 📦 **Native glTF 2.0 / GLB Output**: Packs model-space inverse bind matrices (`MAT4`), normalized 4-joint skin weights (`JOINTS_0`, `WEIGHTS_0`), and keyframed Euler/quaternion tracks into engine-ready binary `.glb` containers.
@@ -70,7 +70,7 @@ flowchart TD
     C --> D["Part Segmentation\n(SAM3 Text Prompts & 3D SDF)"]
     
     B --> E["Laplace-Beltrami Contraction\n((W_L L + W_H) V = W_H V)"]
-    E --> F["Centerline Spine Extraction\n(Algo B Iterative Slice Centering)"]
+    E --> F["Centerline Spine Extraction\n(Laplacian Smoothing & Iterative Slicing)"]
     F --> G["Centripetal Catmull-Rom Spline\n(alpha = 0.5 Parameterization)"]
     
     D & G --> I["Hierarchical Armature Generation\n(DAG Bone Tree & Connected Segments)"]
@@ -195,7 +195,7 @@ animgen info -m outputs/goldfish_swimming.glb
 | **Arthropods** | Crabs, Lobsters, Mantis Shrimp | Segmented multi-leg walking & claw gaits | ⏳ **TODO / Roadmap** | `ArthropodModels` (Planned) |
 
 > [!IMPORTANT]
-> **Implementation Scope & TODOs:** Currently, **Fish (`FishModels`)** and **Serpentine / Snake (`SerpentineModels`)** are 100% completed, verified with integration tests, and production-ready. The remaining five biological locomotion types (Rajiform, Labriform, Cephalopods, Gelatinous, Arthropods) form the active project roadmap and are documented in detail in [GSoC 2026 Report](docs/reports/report-gsoc-2026.md#4-locomotion-taxonomy-completed-implementations-vs-remaining-todos).
+> **Implementation Scope & TODOs:** Currently, **Fish (`FishModels`)** and **Serpentine / Snake (`SerpentineModels`)** are 100% completed, verified with integration tests, and production-ready. The remaining five biological locomotion types (Rajiform, Labriform, Cephalopods, Gelatinous, Arthropods) form the active project roadmap and are documented in detail in [GSoC 2026 Report](./docs/reports/report-gsoc-2026.md#4-locomotion-taxonomy-completed-implementations-vs-remaining-todos).
 
 ---
 
@@ -206,7 +206,7 @@ animgen info -m outputs/goldfish_swimming.glb
 ### 1. Zero-Touch Procedural Rigging & Skeletal Armature
 Extraction and conversion of discrete 3D meshes into centered skeletal chains, DAG bone hierarchies, and fin appendages across diverse species (Mackerel, Goldfish, and Sea Snake).
 
-[![Rigged Model Showcase](assets/animgen/Rigged_demo.gif)](assets/animgen/Rigged_demo.mp4)
+[![Rigged Model Showcase](./assets/animgen/Rigged_demo.gif)](./assets/animgen/Rigged_demo.mp4)
 
 *Inspect joint hierarchies, bone transformations, and skin weight assignments directly in standard glTF viewers.*
 
@@ -215,7 +215,7 @@ Extraction and conversion of discrete 3D meshes into centered skeletal chains, D
 ### 2. Biomechanical Swimming Locomotion Synthesis
 Procedural wave kinematics generating multi-track continuous travelling body waves with Linear Blend Skinning (LBS) and Dual Quaternion Skinning (DQS) across production assets (Killer Whale, Shark, Tuna).
 
-[![Locomotion Showcase](assets/animgen/Animation_demo.gif)](assets/animgen/Animation_demo.mp4)
+[![Locomotion Showcase](./assets/animgen/Animation_demo.gif)](./assets/animgen/Animation_demo.mp4)
 
 *Real-time multi-speed locomotion clips (`swim`, `idle`, `sprint`) with zero Blender runtime coupling.*
 
@@ -224,7 +224,7 @@ Procedural wave kinematics generating multi-track continuous travelling body wav
 ### 3. Real-Time Unity Visualizer & GPU Skinning Engine
 End-to-end procedural asset loading, runtime GLTF decompression, and hardware GPU skinning within a Unity Universal Render Pipeline (URP) underwater environment.
 
-[![Unity Visualizer Demo](assets/animgen/Unity_Demo.gif)](assets/animgen/FrontEndDemoCompleteStaticSite.mp4)
+[![Unity Visualizer Demo](./assets/animgen/Unity_Demo.gif)](./assets/animgen/FrontEndDemoCompleteStaticSite.mp4)
 
 *Unity application featuring runtime species query spawner (`beluga whale`, `acadian redfish`), dynamic underwater lighting, and camera orbit controls.*
 
@@ -235,14 +235,14 @@ Validation of complex harmonic wave generators driving synthetic volumetric cyli
 - **Harmonic Wave Superposition:** Demonstrates the mathematical combination of multiple out-of-phase travelling waves and localized standing waves across the skeletal chain. By superimposing primary longitudinal body waves with high-frequency transverse oscillations, `animgen` produces organic propulsion and fluid trailing-edge dynamics.
 - **Volume Preservation Under Combined Deformation:** While linear blend skinning (LBS) collapses cross-sectional mesh volume when perpendicular wave components interfere, Dual Quaternion Linear Blending (DLB) maintains exact geometric volume and cross-sectional integrity under extreme wave twist and bend angles.
 
-[![Synthetic Cylinder Demo](assets/animgen/Animation_Cylinder_Demo.gif)](assets/animgen/Animation_Cylinder_Demo.mp4)
+[![Synthetic Cylinder Demo](./assets/animgen/Animation_Cylinder_Demo.gif)](./assets/animgen/Animation_Cylinder_Demo.mp4)
 
 ---
 
 ### 5. Morphological Appendage Segmentation
 Zero-shot vision foundation model (Meta SAM3) and 3D Shape Diameter Function (SDF) segmentation to identify and partition anatomical appendages:
-* **Dorsal Fin Segmentation:** [Demo Video](assets/animgen/Mesh-Segmentation-Demo/Dorsal-Fin-Segmentation.mp4)
-* **Caudal Fin / Tail Segmentation:** [Demo Video](assets/animgen/Mesh-Segmentation-Demo/Tail-Segmentation.mp4)
+* **Dorsal Fin Segmentation:** [Demo Video](./assets/animgen/Mesh-Segmentation-Demo/Dorsal-Fin-Segmentation.mp4)
+* **Caudal Fin / Tail Segmentation:** [Demo Video](./assets/animgen/Mesh-Segmentation-Demo/Tail-Segmentation.mp4)
 
 ---
 
@@ -293,7 +293,7 @@ pip install -e ".[dev]"
 
 ### Environment Configuration & SAM3 Weights Download
 
-To enable accelerated zero-shot vision segmentation via Meta SAM3 (`facebook/sam3`), copy [.env.example](.env.example) to `.env` and provide your Hugging Face user access token:
+To enable accelerated zero-shot vision segmentation via Meta SAM3 (`facebook/sam3`), copy [.env.example](./.env.example) to `.env` and provide your Hugging Face user access token:
 
 ```bash
 # Copy template environment file
@@ -307,6 +307,22 @@ HF_TOKEN=hf_your_huggingface_access_token_here
 
 # Optional: custom cache directory for downloaded checkpoints
 HF_HOME=./models_cache/SAM_original/
+```
+
+### Hardware & Environment Health Check
+
+Validate that Python, PyTorch, CUDA GPU acceleration, and core dependencies are correctly initialized:
+
+```bash
+python -c "
+import sys, torch, pygltflib
+print('Python  :', sys.version.split()[0])
+print('PyTorch :', torch.__version__)
+print('CUDA    :', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU     :', torch.cuda.get_device_name(0))
+print('glTF 2.0: Ready (pygltflib)')
+"
 ```
 
 > [!NOTE]
@@ -338,7 +354,7 @@ pytest
 ## Comprehensive Final Report
 
 A publication-grade technical report documenting mathematical derivations, ablation studies, empirical benchmarks, and system specifications is available in:
-* 📄 **[Comprehensive GSoC 2026 Technical Report (`docs/reports/report-gsoc-2026.md`)](docs/reports/report-gsoc-2026.md)**
+* 📄 **[Comprehensive GSoC 2026 Technical Report (`docs/reports/report-gsoc-2026.md`)](./docs/reports/report-gsoc-2026.md)**
 
 ---
 
@@ -372,6 +388,6 @@ Developed as part of **Google Summer of Code (GSoC) 2026** with **[Catrobat](htt
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE).
 
 

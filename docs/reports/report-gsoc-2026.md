@@ -7,7 +7,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![glTF 2.0](https://img.shields.io/badge/glTF-2.0%20%2F%20GLB-green.svg)](https://www.khronos.org/gltf/)
-[![Tests](https://img.shields.io/badge/tests-60%20passed-brightgreen.svg)](../../tests/)
+[![Tests](https://img.shields.io/badge/tests-68%20passed-brightgreen.svg)](../../tests/)
 [![GSoC 2026](https://img.shields.io/badge/GSoC-2026-orange.svg)](https://summerofcode.withgoogle.com/)
 [![Mentoring Organization: Catrobat](https://img.shields.io/badge/Mentoring%20Org-Catrobat-red.svg)](https://catrobat.org/)
 
@@ -41,7 +41,7 @@
 5. [Visual Showcase & Demonstration Gallery](#5-visual-showcase--demonstration-gallery)
 6. [Empirical Benchmarks & Experimental Validation](#6-empirical-benchmarks--experimental-validation)
    - [6.1 End-to-End Latency Benchmark](#61-end-to-end-latency-benchmark)
-   - [6.2 Skeleton Extraction Accuracy (Au et al. vs. Algo B)](#62-skeleton-extraction-accuracy-au-et-al-vs-algo-b)
+   - [6.2 Skeleton Extraction Accuracy (Au et al. vs. Laplacian Smoothing & Iterative Slicing)](#62-skeleton-extraction-accuracy-au-et-al-vs-laplacian-smoothing--iterative-slicing)
    - [6.3 Bone Heat Skinning Parity vs. Blender Ground Truth](#63-bone-heat-skinning-parity-vs-blender-ground-truth)
    - [6.4 Deformation Engine Comparison: LBS vs. DQS](#64-deformation-engine-comparison-lbs-vs-dqs)
 7. [Testing, Quality Assurance & Reproducibility](#7-testing-quality-assurance--reproducibility)
@@ -92,7 +92,7 @@ flowchart TD
     C --> D["Part Segmentation\n(SAM3 Text Prompts & 3D SDF)"]
     
     B --> E["Laplace-Beltrami Contraction\n((W_L L + W_H) V = W_H V)"]
-    E --> F["Centerline Spine Extraction\n(Algo B Iterative Slice Centering)"]
+    E --> F["Centerline Spine Extraction\n(Laplacian Smoothing & Iterative Slicing)"]
     F --> G["Centripetal Catmull-Rom Spline\n(alpha = 0.5 Parameterization)"]
     
     D & G --> H["Welded Bishop Frame Canonicalizer\n(Continuous (T, N, B) Frame Transport)"]
@@ -109,7 +109,7 @@ flowchart TD
 * **Cotangent Laplace-Beltrami Contraction (`mesh_contraction.py`):** Solves the iterative geometry contraction system based on Au et al.:
   $$\begin{bmatrix} W_L L \\ W_H \end{bmatrix} V^{t+1} = \begin{bmatrix} 0 \\ W_H V^t \end{bmatrix}$$
   where $L_{ij} = \frac{1}{2}(\cot \alpha_{ij} + \cot \beta_{ij})$ is the discrete cotangent Laplacian, $W_L$ is the contraction weight, and $W_H$ anchors vertices to retain high-level morphological volume.
-* **Algo B Cross-Sectional Slice Centering (`refine_skelaton.py`):** Standard contraction leaves nodes skewed toward high-curvature surfaces. Algo B intersects orthogonal cutting planes $\Pi_i = (\mathbf{p}_i, \mathbf{t}_i)$ with the original uncontracted mesh, extracts the resulting 2D cross-sectional boundary polygon, and translates the skeletal node directly to the planar polygon centroid.
+* **Laplacian Smoothing & Iterative Slicing (`refine_skelaton.py`):** Standard contraction leaves nodes skewed toward high-curvature surfaces. This stage applies Laplacian smoothing and an iterative slicing algorithm to increase density along the centerline, intersecting orthogonal cutting planes $\Pi_i = (\mathbf{p}_i, \mathbf{t}_i)$ with the original uncontracted mesh to extract the resulting 2D cross-sectional boundary polygon and translate the skeletal node directly to the planar polygon centroid.
 * **Taubin Low-Pass Filter:** Two-pass non-shrinking smoothing ($\lambda = 0.5, \mu = -0.53$) eliminates residual discretization jitter without collapsing skeletal length.
 
 ### 2.2 Volume-Preserving Welded Bishop Transport Canonicalization
@@ -154,7 +154,7 @@ Local rotation matrices are evaluated down the armature Directed Acyclic Graph (
 To validate cross-platform interoperability and provide accessible interfaces for users and educators, two dedicated interactive demonstrators were engineered:
 
 ### 3.1 React + Three.js Web Animation Editor
-Located at [`demo/web_animation_generation/animation-editor`](file:///media/kahnsvaer/Datasets/PsnlProjects/AnimationGenerationGSoC/demo/web_animation_generation/animation-editor):
+Located at [`demo/web_animation_generation/animation-editor`](../../demo/web_animation_generation/animation-editor):
 * **Technology Stack:** React 19, TypeScript, Vite, Three.js, `@react-three/fiber`, `@react-three/drei`, Zustand, and `react-resizable-panels`.
 * **Key Features:**
   - **3D Viewport:** Interactive WebGL canvas with OrbitControls, transform gizmos, wireframe overlay, and bone skeleton toggle.
@@ -164,7 +164,7 @@ Located at [`demo/web_animation_generation/animation-editor`](file:///media/kahn
   - **Export & Capture:** Capture high-resolution viewport screenshots and export updated glTF animation parameters directly from the browser.
 
 ### 3.2 Unity Real-Time Visualizer & GPU Skinning Engine
-Located at [`demo/static_visualizer/UnityStaticVisualizer`](file:///media/kahnsvaer/Datasets/PsnlProjects/AnimationGenerationGSoC/demo/static_visualizer/UnityStaticVisualizer):
+Located at [`demo/static_visualizer/UnityStaticVisualizer`](../../demo/static_visualizer/UnityStaticVisualizer):
 * **Technology Stack:** Unity 6 / URP (Universal Render Pipeline), C#, GLTFast runtime loader.
 * **Key Features:**
   - **Hardware GPU Skinning:** Real-time hardware GPU skinning (`gpuSkinning: 1`) of exported `.glb` models running at stable 60+ FPS.
@@ -196,7 +196,7 @@ Located at [`demo/static_visualizer/UnityStaticVisualizer`](file:///media/kahnsv
 1. **Fish (`FishModels`):**
    - Implements full end-to-end autorigging from static fish meshes.
    - Segments dorsal and caudal fins using Meta SAM3 multi-view vision prompts.
-   - Extracts longitudinal spine, applies Algo B slice centroid refinement, and constructs spine armature with dorsal fin and pectoral bone branches.
+   - Extracts longitudinal spine, applies Laplacian smoothing and iterative slicing to increase density, and constructs spine armature with dorsal fin and pectoral bone branches.
    - Straightens curved rest meshes using Welded Bishop Transport frames without UV seam tearing.
    - Generates three distinct locomotion animation clips: `swim` (steady cruising), `idle` (gentle hovering wave), and `sprint` (high-frequency escape burst).
 2. **Serpentine / Snake (`SerpentineModels`):**
@@ -227,7 +227,7 @@ While the foundation architecture (Bishop frames, heat skinning, wave kinematics
 ## 5. Visual Showcase & Demonstration Gallery
 
 ### 5.1 Zero-Touch Skeletal Extraction & Rigging
-Demonstrates the automatic extraction of 1D medial curves, Algo B slice centering refinement, and hierarchical armature synthesis across diverse aquatic morphologies (Mackerel, Goldfish, and Sea Snake).
+Demonstrates the automatic extraction of 1D medial curves, Laplacian smoothing and iterative slicing to increase density, and hierarchical armature synthesis across diverse aquatic morphologies (Mackerel, Goldfish, and Sea Snake).
 
 [![Rigged Model Showcase](../../assets/animgen/Rigged_demo.gif)](../../assets/animgen/Rigged_demo.mp4)
 
@@ -264,7 +264,7 @@ Benchmarked on a standard workstation (AMD Ryzen 7 / Intel Core i7, single-threa
 |---|---|---|---|
 | **Geometry Contraction** | SciPy Sparse Cholesky ($(W_L L + W_H)V = W_H V$) | $\sim 580.0\text{ ms}$ | $O(N^{1.3})$ (20 iterations) |
 | **Connectivity Collapse** | Half-Edge Priority Queue | $\sim 95.0\text{ ms}$ | $O(E \log V)$ |
-| **Algo B Slice Centering** | Orthogonal boundary polygon intersections | **$48.5\text{ ms}$** | $O(K \cdot |F|)$ |
+| **Laplacian Smoothing & Iterative Slicing** | Orthogonal boundary polygon intersections | **$48.5\text{ ms}$** | $O(K \cdot |F|)$ |
 | **Taubin Smoothing** | 2-Pass Vectorized NumPy ($\lambda=0.5, \mu=-0.53$) | **$< 0.5\text{ ms}$** | $O(K)$ |
 | **Bishop Frame Transport** | Parallel transport frame integration (NumPy) | **$12.4\text{ ms}$** | $O(N_{\text{verts}})$ |
 | **Bishop Frame Transport** | Batched PyTorch GPU Tensors (CUDA) | **$< 1.8\text{ ms}$** | Real-time GPU execution |
@@ -274,16 +274,16 @@ Benchmarked on a standard workstation (AMD Ryzen 7 / Intel Core i7, single-threa
 
 ---
 
-### 6.2 Skeleton Extraction Accuracy (Au et al. vs. Algo B)
+### 6.2 Skeleton Extraction Accuracy (Au et al. vs. Laplacian Smoothing & Iterative Slicing)
 Evaluated against ground-truth analytical medial axes across synthetic and biological 3D test shapes:
 
 | Extraction & Refinement Strategy | Average Distance Error | % Improvement vs. Au et al. Baseline |
 |---|---|---|
 | **1. Au et al. Baseline (Raw Contraction)** | $0.0692$ | Baseline |
 | **2. Au et al. + 2 Passes Taubin Filter** | $0.0506$ | $+26.9\%$ |
-| **3. Algo A (Subdivide & Center) + Taubin** | $0.0504$ | $+27.2\%$ |
-| **4. Algo B (`iterative_slice_centering`)** | $0.0410$ | $+40.8\%$ |
-| **5. Algo B + 2 Passes Taubin Filter** | **$0.0391$** | **$+43.5\%$ (Highest Accuracy)** |
+| **3. Subdivide & Center + Taubin** | $0.0504$ | $+27.2\%$ |
+| **4. Iterative Slicing (`iterative_slice_centering`)** | $0.0410$ | $+40.8\%$ |
+| **5. Iterative Slicing + Laplacian Smoothing (Taubin)** | **$0.0391$** | **$+43.5\%$ (Highest Accuracy)** |
 
 ---
 
