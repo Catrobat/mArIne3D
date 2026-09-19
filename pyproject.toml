@@ -1,8 +1,9 @@
 [project]
-name = "animationgenerationgsoc"
+name = "animgen"
 version = "0.1.0"
-description = "Add your description here"
+description = "Procedural Animation Generation Framework"
 readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "accelerate>=1.13.0",
@@ -43,6 +44,27 @@ dependencies = [
 [project.scripts]
 animgen = "animgen.cli:main"
 
+[project.optional-dependencies]
+dev = [
+    "beartype>=0.22.9",
+    "ipykernel>=7.3.0",
+    "ipywidgets>=8.1.8",
+    "matplotlib>=3.10.0",
+    "ninja>=1.13.2",
+    "plotly>=6.0.0",
+    "pre-commit>=4.6.0",
+    "pybind11>=3.1.0",
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pyvista>=0.48.4",
+    "ruff>=0.15.20",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
 packages = ["animgen"]
 
@@ -60,19 +82,7 @@ torchvision = { index = "pytorch" }
 
 [dependency-groups]
 dev = [
-    "beartype>=0.22.9",
-    "ipykernel>=7.3.0",
-    "ipywidgets>=8.1.8",
-    "matplotlib>=3.10.0",
-    "ninja>=1.13.2",
-    "plotly>=6.0.0",
-    "pre-commit>=4.6.0",
-    "pybind11>=3.1.0",
-    "pyright>=1.1.411",
-    "pytest>=9.1.1",
-    "pytest-cov>=7.1.0",
-    "pyvista>=0.48.4",
-    "ruff>=0.15.20",
+    "animgen[dev]",
 ]
 
 [tool.ruff]
